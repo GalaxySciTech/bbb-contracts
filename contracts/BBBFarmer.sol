@@ -1,18 +1,7 @@
 pragma solidity =0.8.23;
 
-import {ERC20Burnable, ERC20} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-
-contract PointToken is Ownable, ERC20Burnable {
-    constructor(
-        string memory name,
-        string memory symbol
-    ) Ownable(msg.sender) ERC20(name, symbol) {}
-
-    function mint(address to, uint256 amount) external onlyOwner {
-        _mint(to, amount);
-    }
-}
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import {PointToken} from "./PointToken.sol";
 
 contract BBBFarmer {
     address public pointToken;
@@ -34,7 +23,8 @@ contract BBBFarmer {
     constructor() {
         bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
         price = 257e18;
-        pointToken = address(new PointToken("Carrot", "Carrot"));
+        pointToken = address(new PointToken("Carrot", "CAR"));
+        PointToken(pointToken).mint(msg.sender, 1296000000000e18);
     }
 
     function getUserAddrsLength() external view returns (uint256) {
