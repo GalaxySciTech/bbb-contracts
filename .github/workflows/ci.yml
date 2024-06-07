@@ -1,0 +1,46 @@
+name: Build and publish image 
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "*"
+  workflow_dispatch: #allow manual trigger to workflow
+
+jobs:
+  test_build_and_push_to_docker_registry:
+    name: Test, build and push image to registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20.x"
+      - name: Check smart contract
+        run: |
+          yarn 
+          npx hardhat test
+
+      - name: Docker login
+        env:
+          DOCKER_USERNAME: ${{secrets.DOCKER_USERNAME}}
+          DOCKER_PASSWORD: ${{secrets.DOCKER_ACCESS_TOKEN}}
+        run: |
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+      - name: Determine Docker Image Name
+        id: image
+        run: |
+          if [[ "${{github.ref_name}}" == "master" ]]; then
+            echo "name=xinfinorg/csc:latest" >> $GITHUB_OUTPUT
+          else
+            echo "name=xinfinorg/csc:${{github.ref_name}}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push image
+        run: |
+          docker build . --file docker/Dockerfile --tag ${{ steps.image.outputs.name }}
+          docker push ${{ steps.image.outputs.name }}

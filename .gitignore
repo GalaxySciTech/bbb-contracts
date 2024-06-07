@@ -1,0 +1,10 @@
+.env
+cache/
+artifacts/
+node_modules/
+dbg.project.json
+contracts-dbg/
+deployment.config.json
+upgrade.config.json
+yarn.lock
+.vscode/
