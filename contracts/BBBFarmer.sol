@@ -21,10 +21,13 @@ contract BBBFarmer {
     address[] public userAddrs;
 
     constructor() {
-        bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
-        price = 257e18;
+        //mainnet
+        // bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
+        //devnet
+        bbb = 0x1796a4cAf25f1a80626D8a2D26595b19b11697c9;
+        price = 2570 ether;
         pointToken = address(new PointToken("Carrot", "CAR"));
-        PointToken(pointToken).mint(msg.sender, 1296000000000e18);
+        PointToken(pointToken).mint(msg.sender, 6e10 ether);
     }
 
     function getUserAddrsLength() external view returns (uint256) {
@@ -42,7 +45,7 @@ contract BBBFarmer {
         User storage user = users[msg.sender];
         uint256 point = user.point;
         user.point = 0;
-        PointToken(pointToken).mint(msg.sender, point);
+        PointToken(pointToken).mint(msg.sender, point * 1 ether);
     }
 
     function _sync(address addr) private {
