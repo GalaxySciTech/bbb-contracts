@@ -2,6 +2,7 @@ const { VoidSigner } = require("ethers");
 
 require("@nomiclabs/hardhat-waffle");
 require("hardhat-gas-reporter");
+require("@nomicfoundation/hardhat-verify");
 require("dotenv").config();
 const network = require("./network.config.json");
 
@@ -34,8 +35,8 @@ module.exports = {
           "1234567890123456789012345678901234567890123456789012345678901234",
       ],
     },
-    xdcdevnet: {
-      url: network["xdcdevnet"],
+    xdc: {
+      url: network["xdc"],
       accounts: [
         process.env.PRIVATE_KEY ||
           "1234567890123456789012345678901234567890123456789012345678901234",
@@ -48,5 +49,29 @@ module.exports = {
           "1234567890123456789012345678901234567890123456789012345678901234",
       ],
     },
+  },
+  etherscan: {
+    apiKey: {
+      xdcparentnet: "test",
+      xdc: "test",
+    },
+    customChains: [
+      {
+        network: "xdc",
+        chainId: 50,
+        urls: {
+          apiURL: "https://bapi.blocksscan.io/api",
+          browserURL: "https://xdc.blocksscan.io/",
+        },
+      },
+      {
+        network: "xdcparentnet",
+        chainId: 551,
+        urls: {
+          apiURL: "https://devnetapi.blocksscan.io/api",
+          browserURL: "https://devnet.blocksscan.io/",
+        },
+      },
+    ],
   },
 };
