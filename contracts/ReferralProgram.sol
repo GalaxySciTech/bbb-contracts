@@ -18,4 +18,10 @@ contract ReferralProgram {
     ) external view returns (uint256) {
         return referrersList[leader].length;
     }
+
+    function getReferrersList(
+        address leader
+    ) external view returns (address[] memory) {
+        return referrersList[leader];
+    }
 }
