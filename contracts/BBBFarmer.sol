@@ -12,7 +12,6 @@ contract BBBFarmer is ERC721AQueryable {
     uint256 public price;
 
     struct User {
-        uint256 stake;
         uint256 last;
         uint256 point;
     }
@@ -38,7 +37,6 @@ contract BBBFarmer is ERC721AQueryable {
     function buy(uint256 amt) external {
         _sync(msg.sender);
         ERC20Burnable(bbb).burnFrom(msg.sender, amt * price);
-        users[msg.sender].stake += amt;
         _mint(msg.sender, amt);
     }
 
@@ -55,13 +53,26 @@ contract BBBFarmer is ERC721AQueryable {
         if (user.last == 0) {
             userAddrs.push(addr);
         }
-        user.point += user.stake * (block.number - user.last);
+        uint256 stake = balanceOf(addr);
+        user.point += stake * (block.number - user.last);
         user.last = block.number;
     }
 
     function getPendingPoint(address addr) external view returns (uint256) {
         User memory user = users[addr];
-        return user.point + user.stake * (block.number - user.last);
+        uint256 stake = balanceOf(addr);
+        return user.point + stake * (block.number - user.last);
+    }
+
+    function _beforeTokenTransfers(
+        address from,
+        address to,
+        uint256 startTokenId,
+        uint256 quantity
+    ) internal virtual override {
+        super._beforeTokenTransfers(from, to, startTokenId, quantity);
+        _sync(from);
+        _sync(to);
     }
 
     function tokenURI(
