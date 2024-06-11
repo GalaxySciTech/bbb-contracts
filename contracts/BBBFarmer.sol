@@ -25,9 +25,9 @@ contract BBBFarmer {
         // bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
         //devnet
         bbb = 0x1796a4cAf25f1a80626D8a2D26595b19b11697c9;
-        price = 2570 ether;
+        price = 257000 ether;
         pointToken = address(new PointToken("Carrot", "CAR"));
-        PointToken(pointToken).mint(msg.sender, 6e10 ether);
+        PointToken(pointToken).mint(msg.sender, 1e9 ether);
     }
 
     function getUserAddrsLength() external view returns (uint256) {

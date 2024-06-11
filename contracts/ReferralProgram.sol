@@ -9,6 +9,7 @@ contract ReferralProgram {
 
     function register(address leader) external {
         require(leaders[msg.sender] == address(0), "already registered");
+        require(leader != msg.sender, "cannot refer self");
         leaders[msg.sender] = leader;
         referrersList[leader].push(msg.sender);
     }
