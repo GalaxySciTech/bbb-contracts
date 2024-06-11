@@ -4,7 +4,7 @@ import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 import {PointToken} from "./PointToken.sol";
 import {ERC721AQueryable, ERC721A, IERC721A} from "erc721a/contracts/extensions/ERC721AQueryable.sol";
 
-contract BBBFarmer is ERC721AQueryable {
+contract CarrotFarmer is ERC721AQueryable {
     address public pointToken;
 
     address public bbb;
