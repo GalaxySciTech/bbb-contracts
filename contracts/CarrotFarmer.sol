@@ -3,11 +3,14 @@ pragma solidity =0.8.23;
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {PointToken} from "./PointToken.sol";
 import {ERC721AQueryable, ERC721A, IERC721A} from "erc721a/contracts/extensions/ERC721AQueryable.sol";
+import {ReferralProgram} from "./ReferralProgram.sol";
 
 contract CarrotFarmer is ERC721AQueryable {
     address public pointToken;
 
     address public bbb;
+
+    address public referralProgram;
 
     uint256 public price;
 
@@ -23,8 +26,10 @@ contract CarrotFarmer is ERC721AQueryable {
     constructor() ERC721A("Carrot Farmer", "Carrot Farmer") {
         //mainnet
         // bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
+        // referralProgram = 0x2475dcd4fe333be814ef7c8f8ce8a1e9b5fcdea0;
         //devnet
         bbb = 0x1796a4cAf25f1a80626D8a2D26595b19b11697c9;
+        referralProgram = address(new ReferralProgram());
         price = 257000 ether;
         pointToken = address(new PointToken("Carrot", "CAR"));
         PointToken(pointToken).mint(msg.sender, 1e9 ether);
@@ -46,6 +51,13 @@ contract CarrotFarmer is ERC721AQueryable {
         uint256 point = user.point;
         user.point = 0;
         PointToken(pointToken).mint(msg.sender, point * 1 ether);
+
+        //refer prize 10%
+        address leader = ReferralProgram(referralProgram).leaders(msg.sender);
+        //leader must have at least 1 stake
+        if (leader != address(0) && balanceOf(leader) > 0) {
+            PointToken(pointToken).mint(leader, (point * 1 ether) / 10);
+        }
     }
 
     function _sync(address addr) private {
