@@ -2,8 +2,9 @@ pragma solidity =0.8.23;
 
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {PointToken} from "./PointToken.sol";
+import {ERC721AQueryable, ERC721A, IERC721A} from "erc721a/contracts/extensions/ERC721AQueryable.sol";
 
-contract BBBFarmer {
+contract BBBFarmer is ERC721AQueryable {
     address public pointToken;
 
     address public bbb;
@@ -20,7 +21,7 @@ contract BBBFarmer {
 
     address[] public userAddrs;
 
-    constructor() {
+    constructor() ERC721A("Carrot Farmer", "Carrot Farmer") {
         //mainnet
         // bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
         //devnet
@@ -38,6 +39,7 @@ contract BBBFarmer {
         _sync(msg.sender);
         ERC20Burnable(bbb).burnFrom(msg.sender, amt * price);
         users[msg.sender].stake += amt;
+        _mint(msg.sender, amt);
     }
 
     function collect() external {
@@ -60,5 +62,21 @@ contract BBBFarmer {
     function getPendingPoint(address addr) external view returns (uint256) {
         User memory user = users[addr];
         return user.point + user.stake * (block.number - user.last);
+    }
+
+    function tokenURI(
+        uint256 _tokenId
+    ) public view override(ERC721A, IERC721A) returns (string memory) {
+        require(
+            _exists(_tokenId),
+            "ERC721Metadata: URI query for nonexistent token"
+        );
+
+        return
+            string(
+                abi.encodePacked(
+                    "ipfs://bafkreiglqr6rotappwzu3vm7n3dyzb466zi34x2xu4uu56ja3bl6o7vbvy"
+                )
+            );
     }
 }
