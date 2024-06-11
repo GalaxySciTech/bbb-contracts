@@ -64,17 +64,6 @@ contract BBBFarmer is ERC721AQueryable {
         return user.point + stake * (block.number - user.last);
     }
 
-    function _beforeTokenTransfers(
-        address from,
-        address to,
-        uint256 startTokenId,
-        uint256 quantity
-    ) internal virtual override {
-        super._beforeTokenTransfers(from, to, startTokenId, quantity);
-        _sync(from);
-        _sync(to);
-    }
-
     function tokenURI(
         uint256 _tokenId
     ) public view override(ERC721A, IERC721A) returns (string memory) {
