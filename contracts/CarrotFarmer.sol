@@ -29,7 +29,7 @@ contract CarrotFarmer is ERC721AQueryable {
         // referralProgram = 0x2475dcd4fe333be814ef7c8f8ce8a1e9b5fcdea0;
         //devnet
         bbb = 0x1796a4cAf25f1a80626D8a2D26595b19b11697c9;
-        referralProgram = address(new ReferralProgram());
+        referralProgram = 0x2828e5DfC0C71Bb92f00fBD3d6DC9A04E24b8f87;
         price = 257000 ether;
         pointToken = address(new PointToken("Carrot", "CAR"));
         PointToken(pointToken).mint(msg.sender, 1e9 ether);
