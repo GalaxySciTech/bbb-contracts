@@ -4,8 +4,9 @@ import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 import {PointToken} from "./PointToken.sol";
 import {ERC721AQueryable, ERC721A, IERC721A} from "erc721a/contracts/extensions/ERC721AQueryable.sol";
 import {ReferralProgram} from "./ReferralProgram.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract CarrotFarmer is ERC721AQueryable {
+contract CarrotFarmer is ERC721AQueryable, Ownable {
     address public pointToken;
 
     address public bbb;
@@ -23,7 +24,10 @@ contract CarrotFarmer is ERC721AQueryable {
 
     address[] public userAddrs;
 
-    constructor() ERC721A("Carrot Farmer", "Carrot Farmer") {
+    constructor()
+        ERC721A("Carrot Farmer V2", "Carrot Farmer V2")
+        Ownable(msg.sender)
+    {
         //mainnet
         bbb = 0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1;
         referralProgram = 0xAf103E2E469aAA90f85310fA406E9693E79f0333;
@@ -31,8 +35,13 @@ contract CarrotFarmer is ERC721AQueryable {
         // bbb = 0x1796a4cAf25f1a80626D8a2D26595b19b11697c9;
         // referralProgram = 0x2828e5DfC0C71Bb92f00fBD3d6DC9A04E24b8f87;
         price = 257000 ether;
-        pointToken = address(new PointToken("Carrot", "CAR"));
+        pointToken = address(new PointToken("Carrot V2", "CAR V2"));
         PointToken(pointToken).mint(msg.sender, 1e9 ether);
+    }
+
+    function adminMint(address addr, uint256 amt) external onlyOwner {
+        _sync(addr);
+        _mint(addr, amt);
     }
 
     function getUserAddrsLength() external view returns (uint256) {
@@ -65,15 +74,19 @@ contract CarrotFarmer is ERC721AQueryable {
         if (user.last == 0) {
             userAddrs.push(addr);
             user.last = block.number;
+        } else {
+            uint256 stake = balanceOf(addr);
+            user.point += stake * (block.number - user.last);
+            user.last = block.number;
         }
-        uint256 stake = balanceOf(addr);
-        user.point += stake * (block.number - user.last);
-        user.last = block.number;
     }
 
     function getPendingPoint(address addr) external view returns (uint256) {
         User memory user = users[addr];
         uint256 stake = balanceOf(addr);
+        if (user.last == 0) {
+            return 0;
+        }
         return user.point + stake * (block.number - user.last);
     }
 
