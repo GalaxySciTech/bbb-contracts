@@ -64,6 +64,7 @@ contract CarrotFarmer is ERC721AQueryable {
         User storage user = users[addr];
         if (user.last == 0) {
             userAddrs.push(addr);
+            user.last = block.number;
         }
         uint256 stake = balanceOf(addr);
         user.point += stake * (block.number - user.last);
