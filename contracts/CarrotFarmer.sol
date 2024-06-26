@@ -22,8 +22,6 @@ contract CarrotFarmer is ERC721AQueryable, Ownable {
 
     mapping(address => User) public users;
 
-    address[] public userAddrs;
-
     constructor()
         ERC721A("Carrot Farmer V2", "Carrot Farmer V2")
         Ownable(msg.sender)
@@ -42,10 +40,6 @@ contract CarrotFarmer is ERC721AQueryable, Ownable {
     function adminMint(address addr, uint256 amt) external onlyOwner {
         _sync(addr);
         _mint(addr, amt);
-    }
-
-    function getUserAddrsLength() external view returns (uint256) {
-        return userAddrs.length;
     }
 
     function buy(uint256 amt) external {
@@ -72,7 +66,6 @@ contract CarrotFarmer is ERC721AQueryable, Ownable {
     function _sync(address addr) private {
         User storage user = users[addr];
         if (user.last == 0) {
-            userAddrs.push(addr);
             user.last = block.number;
         } else {
             uint256 stake = balanceOf(addr);
