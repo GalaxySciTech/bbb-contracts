@@ -1,7 +1,7 @@
 pragma solidity =0.8.23;
 
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import {PointToken} from "./PointToken.sol";
+import {PointToken} from "./extensions/PointToken.sol";
 import {ERC721AQueryable, ERC721A, IERC721A} from "erc721a/contracts/extensions/ERC721AQueryable.sol";
 import {ReferralProgram} from "./ReferralProgram.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
