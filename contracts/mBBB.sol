@@ -13,11 +13,11 @@ contract mBBB is ERC20Snapshot {
      */
     error ERC20InvalidUnderlying(address token);
 
-    constructor() ERC20("mBBB", "mBBB") EIP712("mBBB", "1") {
+    constructor() ERC20("Megadrop BBB", "mBBB") EIP712("mBBB", "1") {
         //mainnet
-        _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
+        // _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
         //devnet
-        // _underlying = IERC20(0x1796a4cAf25f1a80626D8a2D26595b19b11697c9);
+        _underlying = IERC20(0x1796a4cAf25f1a80626D8a2D26595b19b11697c9);
     }
 
     /**
