@@ -22,6 +22,8 @@ contract MegadropBBB is ERC20Snapshot {
 
     uint256 public price;
 
+    mapping(address => mapping(uint256 => bool)) public claimed;
+
     /**
      * @dev The underlying token couldn't be wrapped.
      */
@@ -132,8 +134,10 @@ contract MegadropBBB is ERC20Snapshot {
 
     function claim(uint256 index) external {
         DropToken memory dropToken = dropTokens[index];
+        require(!claimed[_msgSender()][index], "MegadropBBB: already claimed");
         uint256 claimAmt = getClaimAmt(index, _msgSender());
         PointToken(dropToken.token).mint(_msgSender(), claimAmt);
+        claimed[_msgSender()][index] = true;
     }
 
     function getClaimAmt(
@@ -146,6 +150,9 @@ contract MegadropBBB is ERC20Snapshot {
             "MegadropBBB: invalid drop token"
         );
         uint256 snapshotTotalSupply = getPastTotalSupply(dropToken.snapshotId);
+        if (snapshotTotalSupply == 0) {
+            return 0;
+        }
         uint256 snapshotAmt = getPastVotes(account, dropToken.snapshotId);
         uint256 claimAmt = (dropToken.dropAmt * snapshotAmt) /
             snapshotTotalSupply;
