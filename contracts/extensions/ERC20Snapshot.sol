@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 import {ERC20Votes} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 
 abstract contract ERC20Snapshot is ERC20Votes {
-    uint48 private _snapshotId;
+    uint48 private _snapshotId = 1;
 
     event ERC20SnapshotCheckpointed(uint48 id);
 

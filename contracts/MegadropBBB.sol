@@ -4,9 +4,23 @@ import {ERC20Snapshot} from "./extensions/ERC20Snapshot.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {IERC20, ERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {PointToken} from "./extensions/PointToken.sol";
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
-contract mBBB is ERC20Snapshot {
+contract MegadropBBB is ERC20Snapshot {
+    struct DropToken {
+        address token;
+        string name;
+        string symbol;
+        uint256 totalSupply;
+        uint256 dropAmt;
+        uint256 snapshotId;
+    }
+    DropToken[] dropTokens;
+
     IERC20 private immutable _underlying;
+
+    uint256 public price;
 
     /**
      * @dev The underlying token couldn't be wrapped.
@@ -18,6 +32,7 @@ contract mBBB is ERC20Snapshot {
         // _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
         //devnet
         _underlying = IERC20(0x1796a4cAf25f1a80626D8a2D26595b19b11697c9);
+        price = 257000 ether;
     }
 
     /**
@@ -82,5 +97,68 @@ contract mBBB is ERC20Snapshot {
         uint256 value = _underlying.balanceOf(address(this)) - totalSupply();
         _mint(account, value);
         return value;
+    }
+
+    function drop(
+        string calldata name,
+        string calldata symbol,
+        uint256 totalSupply,
+        uint256 dropPercent
+    ) external {
+        require(dropPercent <= 100, "MegadropBBB: invalid drop percent");
+        PointToken dropToken = new PointToken(name, symbol);
+        uint256 dropAmt = (totalSupply * dropPercent) / 100;
+        uint256 mintAmt = totalSupply - dropAmt;
+        if (mintAmt > 0) {
+            dropToken.mint(_msgSender(), mintAmt);
+        }
+
+        if (dropAmt > 0) {
+            dropTokens.push(
+                DropToken(
+                    address(dropToken),
+                    name,
+                    symbol,
+                    totalSupply,
+                    dropAmt,
+                    clock()
+                )
+            );
+            _snapshot();
+        }
+
+        ERC20Burnable(address(_underlying)).burnFrom(_msgSender(), price);
+    }
+
+    function claim(uint256 index) external {
+        DropToken memory dropToken = dropTokens[index];
+        uint256 claimAmt = getClaimAmt(index, _msgSender());
+        PointToken(dropToken.token).mint(_msgSender(), claimAmt);
+    }
+
+    function getClaimAmt(
+        uint256 index,
+        address account
+    ) public view returns (uint256) {
+        DropToken memory dropToken = dropTokens[index];
+        require(
+            dropToken.token != address(0),
+            "MegadropBBB: invalid drop token"
+        );
+        uint256 snapshotTotalSupply = getPastTotalSupply(dropToken.snapshotId);
+        uint256 snapshotAmt = getPastVotes(account, dropToken.snapshotId);
+        uint256 claimAmt = (dropToken.dropAmt * snapshotAmt) /
+            snapshotTotalSupply;
+        return claimAmt;
+    }
+
+    function getDropToken(
+        uint256 index
+    ) external view returns (DropToken memory) {
+        return dropTokens[index];
+    }
+
+    function getDropTokenLength() external view returns (uint256) {
+        return dropTokens.length;
     }
 }
