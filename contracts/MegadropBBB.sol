@@ -4,10 +4,10 @@ import {ERC20Snapshot} from "./extensions/ERC20Snapshot.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {IERC20, ERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {PointToken} from "./extensions/PointToken.sol";
+import {PointToken, Ownable} from "./extensions/PointToken.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
-contract MegadropBBB is ERC20Snapshot {
+contract MegadropBBB is ERC20Snapshot, Ownable {
     struct DropToken {
         address token;
         string name;
@@ -29,7 +29,11 @@ contract MegadropBBB is ERC20Snapshot {
      */
     error ERC20InvalidUnderlying(address token);
 
-    constructor() ERC20("Megadrop BBB", "mBBB") EIP712("mBBB", "1") {
+    constructor()
+        ERC20("Megadrop BBB", "mBBB")
+        EIP712("mBBB", "1")
+        Ownable(msg.sender)
+    {
         //mainnet
         // _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
         //devnet
