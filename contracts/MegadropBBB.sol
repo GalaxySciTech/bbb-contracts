@@ -172,4 +172,8 @@ contract MegadropBBB is ERC20Snapshot, Ownable {
     function getDropTokenLength() external view returns (uint256) {
         return dropTokens.length;
     }
+
+    function setPrice(uint256 _price) external onlyOwner {
+        price = _price;
+    }
 }
