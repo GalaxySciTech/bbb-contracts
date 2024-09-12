@@ -3,9 +3,11 @@ pragma solidity =0.8.23;
 import {PointToken, Ownable} from "./extensions/PointToken.sol";
 import {MegadropBBB} from "./MegadropBBB.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract MegadropBBBV2 is Ownable, ReentrancyGuard {
     struct DropToken {
+        uint256 index;
         address token;
         string name;
         string symbol;
@@ -22,7 +24,12 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
 
     uint256 public deployFee;
 
+    uint256 public constant k = 2e18;
+
+    mapping(address => mapping(address => bool)) public delegateAllowance;
+
     event Drop(
+        uint256 index,
         address token,
         string name,
         string symbol,
@@ -31,9 +38,14 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
         uint256 snapshotId
     );
 
+    event Buy();
+
+    event Sell();
+
     constructor() Ownable(msg.sender) {
         deployFee = 300 ether;
-        megadropBBBV1 = address(0);
+        //devnet
+        megadropBBBV1 = 0xb89D5cb86f2403ca602Ee45a687437a9F0Ce1C9c;
     }
 
     function drop(
@@ -43,8 +55,10 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
         require(msg.value >= deployFee, "MegadropBBBV2: incorrect value");
         PointToken dropToken = new PointToken(name, symbol);
         uint256 snapshotId = MegadropBBB(megadropBBBV1).clock();
+        uint256 index = dropTokens.length;
         dropTokens.push(
             DropToken(
+                index,
                 address(dropToken),
                 name,
                 symbol,
@@ -56,6 +70,7 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
         MegadropBBB(megadropBBBV1)._snapshot();
 
         emit Drop(
+            index,
             address(dropToken),
             name,
             symbol,
@@ -70,6 +85,10 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
         uint256 amount
     ) public view returns (uint256) {
         DropToken memory dropToken = getDropToken(index);
+        uint256 totalSupply = PointToken(dropToken.token).totalSupply();
+        uint256 buyAmount = Math.sqrt(totalSupply ** 2 + k * amount) -
+            totalSupply;
+        return buyAmount;
     }
 
     function getSellAmount(
@@ -77,25 +96,34 @@ contract MegadropBBBV2 is Ownable, ReentrancyGuard {
         uint256 amount
     ) public view returns (uint256) {
         DropToken memory dropToken = getDropToken(index);
+        uint256 totalSupply = PointToken(dropToken.token).totalSupply();
+        uint256 newTotalSupply = totalSupply - amount;
+        uint256 refund = (totalSupply ** 2 - newTotalSupply ** 2) / k;
+        return refund;
     }
 
     function buy(uint256 index) external payable {
+        require(msg.value > 0, "MegadropBBBV2: value must greater than 0");
         DropToken memory dropToken = getDropToken(index);
-
-        PointToken(dropToken.token).mint(msg.sender, 1);
+        uint256 buyAmount = getBuyAmount(index, msg.value);
+        PointToken(dropToken.token).mint(msg.sender, buyAmount);
     }
 
-    function sell(uint256 index, uint256 amount) external {
+    function sell(uint256 index, uint256 amount) external nonReentrant {
+        require(amount > 0, "MegadropBBBV2: amount must greater than 0");
         DropToken memory dropToken = getDropToken(index);
+        uint256 refund = getSellAmount(index, amount);
 
         PointToken(dropToken.token).burnFrom(msg.sender, amount);
+        payable(msg.sender).transfer(refund);
     }
 
-    function claim(uint256 index) external nonReentrant {
-        require(!claimed[msg.sender][index], "MegadropBBBV2: already claimed");
-        uint256 claimAmt = getClaimAmt(index, msg.sender);
-        payable(msg.sender).transfer(claimAmt);
-        claimed[msg.sender][index] = true;
+    function claim(uint256 index, address account) external nonReentrant {
+        if (!claimed[msg.sender][index]) {
+            uint256 claimAmt = getClaimAmt(index, account);
+            payable(account).transfer(claimAmt);
+            claimed[account][index] = true;
+        }
     }
 
     function getClaimAmt(
