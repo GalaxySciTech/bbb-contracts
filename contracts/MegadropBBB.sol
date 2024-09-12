@@ -24,6 +24,14 @@ contract MegadropBBB is ERC20Snapshot, Ownable {
 
     mapping(address => mapping(uint256 => bool)) public claimed;
 
+    event Drop(
+        address droper,
+        string name,
+        string symbol,
+        uint256 totalSupply,
+        uint256 dropAmt
+    );
+
     /**
      * @dev The underlying token couldn't be wrapped.
      */
@@ -35,9 +43,9 @@ contract MegadropBBB is ERC20Snapshot, Ownable {
         Ownable(msg.sender)
     {
         //mainnet
-        // _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
+        _underlying = IERC20(0xFa4dDcFa8E3d0475f544d0de469277CF6e0A6Fd1);
         //devnet
-        _underlying = IERC20(0x1796a4cAf25f1a80626D8a2D26595b19b11697c9);
+        // _underlying = IERC20(0x1796a4cAf25f1a80626D8a2D26595b19b11697c9);
         price = 257000 ether;
     }
 
@@ -134,6 +142,7 @@ contract MegadropBBB is ERC20Snapshot, Ownable {
         }
 
         ERC20Burnable(address(_underlying)).burnFrom(_msgSender(), price);
+        emit Drop(msg.sender, name, symbol, totalSupply, dropAmt);
     }
 
     function claim(uint256 index) external {
