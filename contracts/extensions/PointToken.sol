@@ -12,4 +12,11 @@ contract PointToken is Ownable, ERC20Burnable {
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
+
+    function burnFrom(
+        address account,
+        uint256 value
+    ) public override onlyOwner {
+        _burn(account, value);
+    }
 }

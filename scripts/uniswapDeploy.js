@@ -2,11 +2,13 @@ const hre = require("hardhat");
 
 async function main() {
   // We get the contract to deploy
-  const BBBFarmerFactory = await hre.ethers.getContractFactory("MegadropBBBV2");
+  const referralProgramFactory = await hre.ethers.getContractFactory(
+    "UniswapV2Factory"
+  );
 
-  let BBBFarmer;
+  let referralProgram;
   try {
-    BBBFarmer = await BBBFarmerFactory.deploy();
+    referralProgram = await referralProgramFactory.deploy("0x2475dcd4fe333be814ef7c8f8ce8a1e9b5fcdea0");
   } catch (e) {
     console.error(e, "\n");
     throw Error(
@@ -14,9 +16,9 @@ async function main() {
     );
   }
 
-  await BBBFarmer.deployed();
+  await referralProgram.deployed();
 
-  console.log("BBBFarmer deployed to:", BBBFarmer.address);
+  console.log("ReferralProgram deployed to:", referralProgram.address);
 }
 
 // We recommend this pattern to be able to use async/await everywhere
