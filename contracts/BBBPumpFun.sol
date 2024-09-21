@@ -22,9 +22,23 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         uint256 xdcAmount;
         uint256 createTime;
         uint256 dropAmt;
+        string imageUrl;
+        string description;
+        string website;
+        string telegram;
+        string twitter;
+    }
+
+    struct Kline {
+        uint256 time;
+        uint256 open;
+        uint256 close;
+        uint256 tradeAmt;
     }
 
     DropToken[] public dropTokens;
+
+    mapping(uint256 => Kline[]) public klineMap;
 
     mapping(address => mapping(uint256 => bool)) public claimed;
 
@@ -55,7 +69,6 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         string symbol,
         uint256 deployFee,
         address deployer,
-        uint256 snapshotId,
         uint256 maxXdc,
         uint256 createTime
     );
@@ -90,11 +103,69 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         swapFee = 100;
     }
 
+    function getKlineLength(uint256 index) external view returns (uint256) {
+        return klineMap[index].length;
+    }
+
+    function uploadToken(
+        uint256 index,
+        string calldata imageUrl,
+        string calldata description,
+        string calldata website,
+        string calldata telegram,
+        string calldata twitter
+    ) external {
+        DropToken storage dropTokenStorage = dropTokens[index - 1];
+        require(
+            dropTokenStorage.deployer == msg.sender,
+            "MegadropBBBV2: must deployer"
+        );
+        dropTokenStorage.imageUrl = imageUrl;
+        dropTokenStorage.description = description;
+        dropTokenStorage.website = website;
+        dropTokenStorage.telegram = telegram;
+        dropTokenStorage.twitter = twitter;
+    }
+
     function drop(
         string calldata name,
-        string calldata symbol
-    ) external payable {
+        string calldata symbol,
+        string calldata imageUrl,
+        string calldata description,
+        string calldata website,
+        string calldata telegram,
+        string calldata twitter
+    ) external payable nonReentrant {
         require(msg.value >= deployFee, "MegadropBBBV2: incorrect value");
+        require(
+            bytes(name).length <= 20,
+            "MegadropBBBV2: name need less 20 bytes"
+        );
+        require(
+            bytes(symbol).length <= 10,
+            "MegadropBBBV2: symbol need less 10 bytes"
+        );
+        require(
+            bytes(imageUrl).length <= 256,
+            "MegadropBBBV2: imageUrl need less 256 bytes"
+        );
+        require(
+            bytes(description).length <= 256,
+            "MegadropBBBV2: description need less 256 bytes"
+        );
+        require(
+            bytes(website).length <= 256,
+            "MegadropBBBV2: website need less 256 bytes"
+        );
+        require(
+            bytes(telegram).length <= 256,
+            "MegadropBBBV2: telegram need less 256 bytes"
+        );
+        require(
+            bytes(twitter).length <= 256,
+            "MegadropBBBV2: twitter need less 256 bytes"
+        );
+        payable(foundation).transfer(msg.value);
         PointToken dropToken = new PointToken(name, symbol);
 
         uint256 index = dropTokens.length + 1;
@@ -111,7 +182,12 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
                 0,
                 0,
                 block.timestamp,
-                0
+                0,
+                imageUrl,
+                description,
+                website,
+                telegram,
+                twitter
             )
         );
         tokenMapping[address(dropToken)] = index;
@@ -123,7 +199,6 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
             symbol,
             deployFee,
             msg.sender,
-            0,
             deployMaxXdc,
             block.timestamp
         );
@@ -189,6 +264,8 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         if (moveLiq == 1) {
             moveLiquidity(index);
         }
+
+        klineMap[index].push(Kline(block.timestamp, open, close, buyAmount));
         emit Trade(
             index,
             dropToken.token,
@@ -256,6 +333,8 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         if (refundSwapFee > 0) {
             payable(foundation).transfer(refundSwapFee);
         }
+
+        klineMap[index].push(Kline(block.timestamp, open, close, amount));
 
         emit Trade(
             index,
