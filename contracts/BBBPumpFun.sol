@@ -56,7 +56,7 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
 
     address public foundation;
 
-    uint256 public constant k = 2e18;
+    uint256 public constant k = 2e25;
 
     mapping(address => mapping(address => bool)) public delegateAllowance;
 
@@ -98,7 +98,7 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         deployFee = 0 ether;
         megadropBBBV1 = 0xb89D5cb86f2403ca602Ee45a687437a9F0Ce1C9c;
         uniswapV2Factory = 0x295CE027f21D45bc08386d8c59f51bE5f38a01C1;
-        deployMaxXdc = 1 ether;
+        deployMaxXdc = 10000 ether;
         weth = 0x7025d0a3AC01AE31469a9eC018D54A0fe3A30dE9;
         swapFee = 100;
     }
@@ -138,20 +138,20 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
     ) external payable nonReentrant {
         require(msg.value >= deployFee, "MegadropBBBV2: incorrect value");
         require(
-            bytes(name).length <= 20,
-            "MegadropBBBV2: name need less 20 bytes"
+            bytes(name).length <= 20 && bytes(name).length > 0,
+            "MegadropBBBV2: name need less 20 bytes and gt 0 bytes"
         );
         require(
-            bytes(symbol).length <= 10,
-            "MegadropBBBV2: symbol need less 10 bytes"
+            bytes(symbol).length <= 10 && bytes(symbol).length > 0,
+            "MegadropBBBV2: symbol need less 10 bytes and gt 0 bytes"
         );
         require(
-            bytes(imageUrl).length <= 256,
-            "MegadropBBBV2: imageUrl need less 256 bytes"
+            bytes(imageUrl).length <= 256 && bytes(imageUrl).length > 0,
+            "MegadropBBBV2: imageUrl need less 256 bytes and gt 0 bytes"
         );
         require(
-            bytes(description).length <= 256,
-            "MegadropBBBV2: description need less 256 bytes"
+            bytes(description).length <= 256 && bytes(description).length > 0,
+            "MegadropBBBV2: description need less 256 bytes and gt 0 bytes"
         );
         require(
             bytes(website).length <= 256,
@@ -250,8 +250,9 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         uint256 moveLiq = 0;
 
         if (xdcAmount + newBuyXdcAmount >= dropToken.maxXdc) {
-            newBuyXdcAmount = dropToken.maxXdc - xdcAmount;
-            payable(msg.sender).transfer(newBuyXdcAmount - newBuyXdcAmount);
+            uint256 maxBuyXdcAmount = dropToken.maxXdc - xdcAmount;
+            payable(msg.sender).transfer(newBuyXdcAmount - maxBuyXdcAmount);
+            newBuyXdcAmount = maxBuyXdcAmount;
             moveLiq = 1;
             dropTokenStorage.xdcAmount = dropToken.maxXdc;
         } else {
@@ -325,7 +326,7 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         dropTokenStorage.xdcAmount -= refund;
 
         PointToken(dropToken.token).burnFrom(msg.sender, amount);
-        uint256 close = price(index);
+
         uint256 refundSwapFee = (refund * swapFee) / 10000;
         refund -= refundSwapFee;
         payable(msg.sender).transfer(refund);
@@ -333,6 +334,13 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         if (refundSwapFee > 0) {
             payable(foundation).transfer(refundSwapFee);
         }
+
+        if (dropTokenStorage.xdcAmount <= 10) {
+            payable(foundation).transfer(dropTokenStorage.xdcAmount);
+            dropTokenStorage.xdcAmount = 0;
+        }
+
+        uint256 close = price(index);
 
         klineMap[index].push(Kline(block.timestamp, open, close, amount));
 
@@ -380,10 +388,14 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
     function getDropToken(
         uint256 index
     ) public view returns (DropToken memory) {
+        require(
+            index > 0 && index <= dropTokens.length,
+            "MegadropBBBV2: Invalid index"
+        );
         DropToken memory dropToken = dropTokens[index - 1];
         require(
             dropToken.token != address(0),
-            "MegadropBBBV2:  invalid drop token"
+            "MegadropBBBV2: invalid drop token"
         );
         return dropToken;
     }

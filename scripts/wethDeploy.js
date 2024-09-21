@@ -2,9 +2,7 @@ const hre = require("hardhat");
 
 async function main() {
   // We get the contract to deploy
-  const referralProgramFactory = await hre.ethers.getContractFactory(
-    "WETH9"
-  );
+  const referralProgramFactory = await hre.ethers.getContractFactory("WETH9");
 
   let referralProgram;
   try {

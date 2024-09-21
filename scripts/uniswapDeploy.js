@@ -8,7 +8,9 @@ async function main() {
 
   let referralProgram;
   try {
-    referralProgram = await referralProgramFactory.deploy("0x2475dcd4fe333be814ef7c8f8ce8a1e9b5fcdea0");
+    referralProgram = await referralProgramFactory.deploy(
+      "0x2475dcd4fe333be814ef7c8f8ce8a1e9b5fcdea0"
+    );
   } catch (e) {
     console.error(e, "\n");
     throw Error(
