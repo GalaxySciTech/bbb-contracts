@@ -107,7 +107,7 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         return klineMap[index].length;
     }
 
-    function uploadToken(
+    function updateToken(
         uint256 index,
         string calldata imageUrl,
         string calldata description,
@@ -119,6 +119,26 @@ contract BBBPumpFun is Ownable, ReentrancyGuard {
         require(
             dropTokenStorage.deployer == msg.sender,
             "MegadropBBBV2: must deployer"
+        );
+        require(
+            bytes(imageUrl).length <= 256 && bytes(imageUrl).length > 0,
+            "MegadropBBBV2: imageUrl need less 256 bytes and gt 0 bytes"
+        );
+        require(
+            bytes(description).length <= 256 && bytes(description).length > 0,
+            "MegadropBBBV2: description need less 256 bytes and gt 0 bytes"
+        );
+        require(
+            bytes(website).length <= 256,
+            "MegadropBBBV2: website need less 256 bytes"
+        );
+        require(
+            bytes(telegram).length <= 256,
+            "MegadropBBBV2: telegram need less 256 bytes"
+        );
+        require(
+            bytes(twitter).length <= 256,
+            "MegadropBBBV2: twitter need less 256 bytes"
         );
         dropTokenStorage.imageUrl = imageUrl;
         dropTokenStorage.description = description;
