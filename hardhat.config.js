@@ -17,7 +17,7 @@ module.exports = {
         enabled: true,
         runs: 200,
       },
-      viaIR: true,
+      // viaIR: true,
     },
   },
   networks: {
@@ -53,15 +53,15 @@ module.exports = {
   etherscan: {
     apiKey: {
       xdcparentnet: "test",
-      xdc: "test",
+      xdc: "GUW8GTEK3UTC9RDW5XAXHHI3H5R9E69Y12",
     },
     customChains: [
       {
         network: "xdc",
         chainId: 50,
         urls: {
-          apiURL: "https://bapi.blocksscan.io/api",
-          browserURL: "https://xdc.blocksscan.io/",
+          apiURL: "https://api.xdcscan.com/api",
+          browserURL: "https://xdcscan.com/",
         },
       },
       {
