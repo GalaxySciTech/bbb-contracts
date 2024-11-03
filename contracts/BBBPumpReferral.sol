@@ -10,6 +10,7 @@ contract BBBPumpReferral is Ownable {
         uint256 kolBlock;
         uint256 userShare;
     }
+
     //referral => leader
     mapping(address => address) public referrersleader;
 
@@ -57,8 +58,24 @@ contract BBBPumpReferral is Ownable {
         leader.userShare = userShare;
     }
 
-    function getLeader(address account) external view returns (Leader memory) {
-        address leader = referrersleader[account];
-        return leaderMap[leader];
+    function getLeader(
+        address account
+    )
+        external
+        view
+        returns (
+            address leader,
+            uint256 userShare,
+            bool isKol,
+            uint256 kolBlock
+        )
+    {
+        address leaderAddress = referrersleader[account];
+        return (
+            leaderAddress,
+            leaderMap[leaderAddress].userShare,
+            leaderMap[leaderAddress].isKol,
+            leaderMap[leaderAddress].kolBlock
+        );
     }
 }
