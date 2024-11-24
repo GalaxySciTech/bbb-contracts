@@ -1,1 +1,1 @@
-module.exports = ["Beny Bad Boy", "BBB"];
+module.exports = ["Shifu Master", "SHIFU"];

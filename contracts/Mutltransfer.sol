@@ -4,11 +4,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract Mutltransfer {
-    
     function batchTransferEther(
         address[] calldata tos,
         uint256[] calldata amts
-    ) external {}
+    ) external payable {
+        for (uint256 i = 0; i < tos.length; i++) {
+            payable(tos[i]).transfer(amts[i]);
+        }
+    }
 
     function batchTransferToken(
         address token,

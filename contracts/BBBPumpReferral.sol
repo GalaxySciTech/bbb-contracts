@@ -1,6 +1,6 @@
 pragma solidity =0.8.23;
 
-import {Ownable} from "./extensions/PointToken.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract BBBPumpReferral is Ownable {
     constructor() Ownable(msg.sender) {}
