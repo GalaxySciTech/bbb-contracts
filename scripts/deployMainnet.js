@@ -17,15 +17,14 @@ async function main() {
 
     const validatorAddress = process.env.XDC_VALIDATOR_ADDRESS || "0x0000000000000000000000000000000000000088";
 
-    console.log("Deploying WXDC contract...");
-    const WXDC = await hre.ethers.getContractFactory("WXDC");
-    const wxdc = await WXDC.deploy();
-    await wxdc.deployed();
-    console.log("✅ WXDC deployed to:", wxdc.address);
+    // 使用官方 WXDC: https://xdcscan.com/address/0x951857744785e80e2de051c32ee7b25f9c458c42
+    const WXDC_MAINNET = "0x951857744785E80e2De051c32EE7b25f9c458C42";
+    const wxdcAddress = process.env.WXDC_ADDRESS || WXDC_MAINNET;
+    console.log("Using official WXDC:", wxdcAddress);
 
     console.log("Deploying XDCLiquidityStaking contract...");
     const XDCLiquidityStaking = await hre.ethers.getContractFactory("XDCLiquidityStaking");
-    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdc.address);
+    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress);
     await stakingPool.deployed();
     
     const stakingPoolAddress = stakingPool.address;
@@ -53,7 +52,7 @@ async function main() {
     try {
         await hre.run("verify:verify", {
             address: stakingPoolAddress,
-            constructorArguments: [validatorAddress, wxdc.address],
+            constructorArguments: [validatorAddress, wxdcAddress],
             contract: "contracts/liquditystaking.sol:XDCLiquidityStaking"
         });
         console.log("✅ Contract verified successfully!");
@@ -71,7 +70,7 @@ async function main() {
     console.log("\n📝 Contract Addresses:");
     console.log("===================================");
     console.log("XDCLiquidityStaking:", stakingPoolAddress);
-    console.log("WXDC:", wxdc.address);
+    console.log("WXDC:", wxdcAddress);
     console.log("bXDC Token (ERC4626):", bxdcAddress);
     console.log("===================================");
     console.log("\n🔗 View on XDCScan:");
@@ -84,7 +83,7 @@ async function main() {
         timestamp: new Date().toISOString(),
         contracts: {
             XDCLiquidityStaking: stakingPoolAddress,
-            WXDC: wxdc.address,
+            WXDC: wxdcAddress,
             bXDC: bxdcAddress
         },
         parameters: {

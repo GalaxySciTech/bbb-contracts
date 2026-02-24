@@ -11,17 +11,25 @@ async function main() {
     // XDC validator 预编译合约地址 (mainnet: 0x0000000000000000000000000000000000000088)
     const validatorAddress = process.env.XDC_VALIDATOR_ADDRESS || "0x0000000000000000000000000000000000000088";
 
-    // 部署 WXDC (ERC4626 asset)
-    console.log("\n部署 WXDC 合约...");
-    const WXDC = await hre.ethers.getContractFactory("WXDC");
-    const wxdc = await WXDC.deploy();
-    await wxdc.deployed();
-    console.log("✅ WXDC 合约已部署:", wxdc.address);
+    // WXDC: 主网使用官方合约 https://xdcscan.com/address/0x951857744785e80e2de051c32ee7b25f9c458c42
+    const WXDC_MAINNET = "0x951857744785E80e2De051c32EE7b25f9c458C42";
+    let wxdcAddress;
+    if (hre.network.name === "xdc" || hre.network.name === "xdc-mainnet") {
+        wxdcAddress = process.env.WXDC_ADDRESS || WXDC_MAINNET;
+        console.log("\n使用官方 WXDC 合约:", wxdcAddress);
+    } else {
+        console.log("\n部署 WXDC 合约 (测试网)...");
+        const WXDC = await hre.ethers.getContractFactory("WXDC");
+        const wxdc = await WXDC.deploy();
+        await wxdc.deployed();
+        wxdcAddress = wxdc.address;
+        console.log("✅ WXDC 合约已部署:", wxdcAddress);
+    }
 
     // 部署 XDCLiquidityStaking 合约（会自动创建 bXDC ERC4626 代币和 WithdrawalRequestNFT）
     console.log("\n部署 XDCLiquidityStaking 合约...");
     const XDCLiquidityStaking = await hre.ethers.getContractFactory("XDCLiquidityStaking");
-    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdc.address);
+    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress);
     await stakingPool.deployed();
     const stakingPoolAddress = stakingPool.address;
     console.log("✅ XDCLiquidityStaking 合约已部署:", stakingPoolAddress);
@@ -48,7 +56,7 @@ async function main() {
     console.log("\n📝 合约地址汇总:");
     console.log("===================================");
     console.log("质押池合约:", stakingPoolAddress);
-    console.log("WXDC:", wxdc.address);
+    console.log("WXDC:", wxdcAddress);
     console.log("bXDC 代币 (ERC4626):", bxdcAddress);
     console.log("===================================");
 
@@ -67,7 +75,7 @@ async function main() {
         deployer: deployer.address,
         contracts: {
             XDCLiquidityStaking: stakingPoolAddress,
-            WXDC: wxdc.address,
+            WXDC: wxdcAddress,
             bXDC: bxdcAddress,
             WithdrawalRequestNFT: withdrawalNFTAddress
         },
