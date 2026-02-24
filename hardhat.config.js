@@ -23,7 +23,7 @@ module.exports = {
   },
   networks: {
     eth: {
-      url: "https://eth-mainnet.g.alchemy.com/v2/LQ0xqhSEYELkJL2ToAS0S02mh8LiT_iR",
+      url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
       accounts: [
         process.env.PRIVATE_KEY ||
           "1234567890123456789012345678901234567890123456789012345678901234",
@@ -60,9 +60,9 @@ module.exports = {
   },
   etherscan: {
     apiKey: {
-      mainnet: "UMP5HMBJTF8S6QE5G1XRE9XUPG1H6K6E89",
+      mainnet: process.env.ETHERSCAN_API_KEY,
       xdcparentnet: "test",
-      xdc: "UMP5HMBJTF8S6QE5G1XRE9XUPG1H6K6E89",
+      xdc: process.env.ETHERSCAN_API_KEY,
     },
     customChains: [
       {
