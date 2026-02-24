@@ -1,6 +1,6 @@
 {
   "xdcparentnet": "https://devnetstats.apothem.network/devnet",
   "xdcsubnet": "https://devnetstats.apothem.network/subnet",
-  "xdc": "https://rpc.xdcrpc.com",
+  "xdc": "https://rpc.ankr.com/xdc",
   "xdctestnet": "https://erpc.apothem.network/"
 }

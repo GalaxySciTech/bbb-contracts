@@ -1,0 +1,15 @@
+{
+  "network": "xdc-mainnet",
+  "deployer": "0x2475Dcd4Fe333bE814Ef7C8f8CE8A1E9B5FcDEA0",
+  "timestamp": "2026-02-24T06:03:28.393Z",
+  "contracts": {
+    "XDCLiquidityStaking": "0x4501342DB11B079311B09d6F5F86F1Dc7f9fbAAE",
+    "bXDC": "0x61E727b6Fe7aCA266923b2B1C31Bf6478482Bb49"
+  },
+  "parameters": {
+    "minStakeAmount": "1000000000000000000",
+    "minWithdrawAmount": "100000000000000000",
+    "maxWithdrawablePercentage": "80"
+  },
+  "verified": true
+}

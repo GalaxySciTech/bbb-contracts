@@ -1,4 +1,5 @@
 const { VoidSigner } = require("ethers");
+const { SocksProxyAgent } = require("socks-proxy-agent");
 
 require("@nomiclabs/hardhat-waffle");
 require("hardhat-gas-reporter");
@@ -21,6 +22,13 @@ module.exports = {
     },
   },
   networks: {
+    eth: {
+      url: "https://eth-mainnet.g.alchemy.com/v2/LQ0xqhSEYELkJL2ToAS0S02mh8LiT_iR",
+      accounts: [
+        process.env.PRIVATE_KEY ||
+          "1234567890123456789012345678901234567890123456789012345678901234",
+      ],
+    },
     xdcparentnet: {
       url: network["xdcparentnet"],
       accounts: [
@@ -52,15 +60,16 @@ module.exports = {
   },
   etherscan: {
     apiKey: {
+      mainnet: "UMP5HMBJTF8S6QE5G1XRE9XUPG1H6K6E89",
       xdcparentnet: "test",
-      xdc: "GUW8GTEK3UTC9RDW5XAXHHI3H5R9E69Y12",
+      xdc: "UMP5HMBJTF8S6QE5G1XRE9XUPG1H6K6E89",
     },
     customChains: [
       {
         network: "xdc",
         chainId: 50,
         urls: {
-          apiURL: "https://api.xdcscan.com/api",
+          apiURL: "https://api.etherscan.io/v2/api?chainid=50",
           browserURL: "https://xdcscan.com/",
         },
       },

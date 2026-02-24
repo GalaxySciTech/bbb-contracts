@@ -1,0 +1,16 @@
+{
+  "network": "xdc",
+  "deployer": "0x2475Dcd4Fe333bE814Ef7C8f8CE8A1E9B5FcDEA0",
+  "contracts": {
+    "XDCLiquidityStaking": "0x884f9B2c2f5Ae2FBB27d89413AF64A9Fa4C91f26",
+    "bXDC": "0xEB43Ad9B9C63F6e2AcDD428433fe2F5b029b1aEF",
+    "WithdrawalRequestNFT": "0x18D36371C6edE12CC9B82E1cE86c332F42a82560"
+  },
+  "validatorAddress": "0x0000000000000000000000000000000000000088",
+  "timestamp": "2026-02-24T09:17:54.000Z",
+  "parameters": {
+    "minStakeAmount": "1000000000000000000",
+    "minWithdrawAmount": "1000000000000000000",
+    "maxWithdrawablePercentage": "10"
+  }
+}
