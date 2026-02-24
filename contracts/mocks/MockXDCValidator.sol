@@ -43,7 +43,18 @@ contract MockXDCValidator {
     }
 
     function unvote(address _candidate, uint256 _cap) external {}
-    function resign(address _candidate) external {}
+
+    function resign(address _candidate) external {
+        require(isCandidate[_candidate], "Not candidate");
+        uint256 cap = candidateCap[_candidate];
+        require(cap > 0, "No cap");
+        isCandidate[_candidate] = false;
+        candidateCap[_candidate] = 0;
+        address owner = candidateOwner[_candidate];
+        candidateOwner[_candidate] = address(0);
+        (bool ok, ) = payable(owner).call{value: cap}("");
+        require(ok, "Resign transfer failed");
+    }
     function getCandidateOwner(address _candidate) external view returns (address) {
         return candidateOwner[_candidate];
     }

@@ -26,19 +26,21 @@ async function main() {
         console.log("✅ WXDC 合约已部署:", wxdcAddress);
     }
 
-    // 部署 XDCLiquidityStaking 合约（会自动创建 bXDC ERC4626 代币和 WithdrawalRequestNFT）
+    // 部署 XDCLiquidityStaking 合约（会自动创建 bXDC, WithdrawalRequestNFT, RewardsVault）
     console.log("\n部署 XDCLiquidityStaking 合约...");
     const XDCLiquidityStaking = await hre.ethers.getContractFactory("XDCLiquidityStaking");
-    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress);
+    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress, deployer.address);
     await stakingPool.deployed();
     const stakingPoolAddress = stakingPool.address;
     console.log("✅ XDCLiquidityStaking 合约已部署:", stakingPoolAddress);
 
-    // 获取 bXDC 代币和 WithdrawalRequestNFT 地址
+    // 获取 bXDC 代币、WithdrawalRequestNFT 和 RewardsVault 地址
     const bxdcAddress = await stakingPool.bxdcToken();
     const withdrawalNFTAddress = await stakingPool.withdrawalNFT();
+    const rewardsVaultAddress = await stakingPool.getRewardsVaultAddress();
     console.log("✅ bXDC 代币地址:", bxdcAddress);
     console.log("✅ WithdrawalRequestNFT 地址:", withdrawalNFTAddress);
+    console.log("✅ RewardsVault 地址 (注册为 masternode 奖励接收者):", rewardsVaultAddress);
 
     // 获取初始参数
     const minStakeAmount = await stakingPool.minStakeAmount();
@@ -61,13 +63,12 @@ async function main() {
     console.log("===================================");
 
     console.log("\n📖 使用说明:");
-    console.log("1. 管理员调用 submitKYC(kycHash) 提交 LSP KYC");
-    console.log("2. 管理员调用 addOperator(addr) 添加 KYC 验证的 operator");
-    console.log("3. 用户调用 stake() 并发送 XDC 来质押，获得 bXDC");
-    console.log("4. 用户调用 withdraw(bxdcAmount) 赎回 - 有即时缓冲则立即到账，否则获得 NFT");
-    console.log("5. NFT 持有者等待解锁后调用 redeemWithdrawal(batchId) 赎回 XDC");
-    console.log("6. 管理员调用 addToInstantExitBuffer() 增加即时退出缓冲");
-    console.log("7. 管理员调用 depositRewards() 存入奖励更新兑换比例");
+    console.log("1. LSP 管理员调用 submitKYC(kycHash) 提交 LSP KYC");
+    console.log("2. Operator 提交 KYC 文档后，LSP 调用 addOperator(addr) 添加");
+    console.log("3. 用户 stake() 质押 XDC -> 获得 bXDC，达到 10mil+ 且 operator 就绪时自动部署 masternode");
+    console.log("4. 将 RewardsVault 地址注册为 masternode 奖励接收者，任何人可调用 harvestRewards() 收取");
+    console.log("5. 参数变更需 proposeX() + executeX() 两步，带 timelock");
+    console.log("6. 暂停/恢复: proposePause() -> executePause() / proposeUnpause() -> executeUnpause()");
 
     // 保存部署信息
     const deploymentInfo = {
@@ -77,7 +78,8 @@ async function main() {
             XDCLiquidityStaking: stakingPoolAddress,
             WXDC: wxdcAddress,
             bXDC: bxdcAddress,
-            WithdrawalRequestNFT: withdrawalNFTAddress
+            WithdrawalRequestNFT: withdrawalNFTAddress,
+            RewardsVault: rewardsVaultAddress
         },
         validatorAddress: validatorAddress,
         timestamp: new Date().toISOString(),

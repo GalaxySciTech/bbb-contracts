@@ -24,7 +24,7 @@ describe("XDC Liquidity Staking", function () {
         await wxdc.deployed();
 
         const XDCLiquidityStaking = await ethers.getContractFactory("XDCLiquidityStaking");
-        stakingPool = await XDCLiquidityStaking.deploy(mockValidator.address, wxdc.address);
+        stakingPool = await XDCLiquidityStaking.deploy(mockValidator.address, wxdc.address, owner.address);
         await stakingPool.deployed();
 
         bxdc = await ethers.getContractAt("bXDC", await stakingPool.bxdcToken());
@@ -150,7 +150,9 @@ describe("XDC Liquidity Staking", function () {
         });
 
         it("解锁后应能赎回 NFT 获得 XDC", async function () {
-            await stakingPool.connect(owner).setWithdrawDelayBlocks(5);
+            await stakingPool.connect(owner).proposeWithdrawDelayBlocks(5);
+            await ethers.provider.send("evm_increaseTime", [86401]);
+            await stakingPool.connect(owner).executeWithdrawDelayBlocks();
 
             await stakingPool.connect(user1).withdraw(ethers.utils.parseEther("10"));
 
@@ -175,8 +177,9 @@ describe("XDC Liquidity Staking", function () {
         });
 
         it("管理员应该能够提取资金运行 validator", async function () {
-            const withdrawAmount = ethers.utils.parseEther("800");
+            const withdrawAmount = ethers.utils.parseEther("200");
             const balanceBefore = await ethers.provider.getBalance(owner.address);
+            const totalBefore = await stakingPool.totalPooledXDC();
 
             const tx = await stakingPool.connect(owner).withdrawForValidator(withdrawAmount);
             const receipt = await tx.wait();
@@ -184,6 +187,7 @@ describe("XDC Liquidity Staking", function () {
 
             const balanceAfter = await ethers.provider.getBalance(owner.address);
             expect(balanceAfter.sub(balanceBefore).add(gasCost)).to.equal(withdrawAmount);
+            expect(await stakingPool.totalPooledXDC()).to.equal(totalBefore.sub(withdrawAmount));
         });
 
         it("不应该允许提取超过最大比例", async function () {
@@ -191,7 +195,7 @@ describe("XDC Liquidity Staking", function () {
 
             await expect(
                 stakingPool.connect(owner).withdrawForValidator(withdrawAmount)
-            ).to.be.revertedWith("Exceeds max");
+            ).to.be.revertedWith("Exceeds max withdrawable");
         });
 
         it("管理员应该能够存入奖励", async function () {
@@ -226,45 +230,67 @@ describe("XDC Liquidity Staking", function () {
     });
 
     describe("参数管理", function () {
-        it("管理员应该能够更新最小质押数量", async function () {
-            await stakingPool.connect(owner).setMinStakeAmount(ethers.utils.parseEther("5"));
+        const advanceTimelock = async () => {
+            await ethers.provider.send("evm_increaseTime", [86401]);
+        };
+
+        it("管理员应该能够更新最小质押数量 (timelock)", async function () {
+            await stakingPool.connect(owner).proposeMinStakeAmount(ethers.utils.parseEther("5"));
+            await advanceTimelock();
+            await stakingPool.connect(owner).executeMinStakeAmount();
             expect(await stakingPool.minStakeAmount()).to.equal(ethers.utils.parseEther("5"));
         });
 
-        it("管理员应该能够更新最小赎回数量", async function () {
-            await stakingPool.connect(owner).setMinWithdrawAmount(ethers.utils.parseEther("1"));
+        it("管理员应该能够更新最小赎回数量 (timelock)", async function () {
+            await stakingPool.connect(owner).proposeMinWithdrawAmount(ethers.utils.parseEther("1"));
+            await advanceTimelock();
+            await stakingPool.connect(owner).executeMinWithdrawAmount();
             expect(await stakingPool.minWithdrawAmount()).to.equal(ethers.utils.parseEther("1"));
         });
 
-        it("管理员应该能够更新最大可提取比例", async function () {
-            await stakingPool.connect(owner).setMaxWithdrawablePercentage(70);
+        it("管理员应该能够更新最大可提取比例 (timelock)", async function () {
+            await stakingPool.connect(owner).proposeMaxWithdrawablePercentage(70);
+            await advanceTimelock();
+            await stakingPool.connect(owner).executeMaxWithdrawablePercentage();
             expect(await stakingPool.maxWithdrawablePercentage()).to.equal(70);
         });
 
         it("非管理员不应该能够更新参数", async function () {
             await expect(
-                stakingPool.connect(user1).setMinStakeAmount(ethers.utils.parseEther("5"))
+                stakingPool.connect(user1).proposeMinStakeAmount(ethers.utils.parseEther("5"))
             ).to.be.reverted;
         });
     });
 
     describe("暂停功能", function () {
-        it("管理员应该能够暂停合约", async function () {
-            await stakingPool.connect(owner).pause();
+        const advanceEmergencyTimelock = async () => {
+            await ethers.provider.send("evm_increaseTime", [3601]);
+        };
+
+        it("管理员应该能够暂停合约 (timelock)", async function () {
+            await stakingPool.connect(owner).proposePause();
+            await advanceEmergencyTimelock();
+            await stakingPool.connect(owner).executePause();
             expect(await stakingPool.paused()).to.equal(true);
         });
 
         it("暂停时不应该能够质押", async function () {
-            await stakingPool.connect(owner).pause();
+            await stakingPool.connect(owner).proposePause();
+            await advanceEmergencyTimelock();
+            await stakingPool.connect(owner).executePause();
 
             await expect(
                 stakingPool.connect(user1).stake({ value: ethers.utils.parseEther("100") })
             ).to.be.reverted;
         });
 
-        it("管理员应该能够恢复合约", async function () {
-            await stakingPool.connect(owner).pause();
-            await stakingPool.connect(owner).unpause();
+        it("管理员应该能够恢复合约 (timelock)", async function () {
+            await stakingPool.connect(owner).proposePause();
+            await advanceEmergencyTimelock();
+            await stakingPool.connect(owner).executePause();
+            await stakingPool.connect(owner).proposeUnpause();
+            await advanceEmergencyTimelock();
+            await stakingPool.connect(owner).executeUnpause();
 
             expect(await stakingPool.paused()).to.equal(false);
 
@@ -281,15 +307,7 @@ describe("XDC Liquidity Staking", function () {
             expect(await bxdc.balanceOf(user1.address)).to.equal(ethers.utils.parseEther("100"));
             expect(await bxdc.balanceOf(user2.address)).to.equal(ethers.utils.parseEther("50"));
 
-            await stakingPool.connect(owner).withdrawForValidator(ethers.utils.parseEther("120"));
-
-            await owner.sendTransaction({
-                to: stakingPool.address,
-                value: ethers.utils.parseEther("120")
-            });
-
             await stakingPool.connect(owner).depositRewards({ value: ethers.utils.parseEther("15") });
-
             expect(await stakingPool.totalPooledXDC()).to.equal(ethers.utils.parseEther("165"));
 
             const newRate = await stakingPool.getExchangeRate();

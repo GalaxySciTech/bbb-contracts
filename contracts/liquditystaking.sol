@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "./interfaces/IXDCValidator.sol";
 import "./interfaces/IKYCVerifier.sol";
 import "./WXDC.sol";
+import "./RewardsVault.sol";
 import "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
@@ -19,7 +20,8 @@ import "@openzeppelin/contracts/interfaces/IERC4626.sol";
  * @dev ERC4626 tokenized vault - liquid staking receipt token for XDC
  * Asset: WXDC (wrapped XDC). Shares: bXDC. Value grows with staking rewards.
  */
-contract bXDC is ERC4626, Ownable {
+contract bXDC is ERC4626, AccessControl {
+    bytes32 public constant STAKING_POOL_ROLE = keccak256("STAKING_POOL_ROLE");
     address public stakingPool;
 
     modifier onlyStakingPool() {
@@ -27,12 +29,20 @@ contract bXDC is ERC4626, Ownable {
         _;
     }
 
-    constructor(IERC20 asset_) ERC4626(asset_) ERC20("Staked XDC", "bXDC") Ownable(msg.sender) {}
-
-    function setStakingPool(address _stakingPool) external onlyOwner {
-        require(_stakingPool != address(0), "Invalid address");
-        stakingPool = _stakingPool;
+    constructor(IERC20 asset_, address admin_) ERC4626(asset_) ERC20("Staked XDC", "bXDC") {
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
+
+    function setStakingPool(address _stakingPool) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_stakingPool != address(0), "Invalid address");
+        address old = stakingPool;
+        stakingPool = _stakingPool;
+        if (old != address(0)) _revokeRole(STAKING_POOL_ROLE, old);
+        _grantRole(STAKING_POOL_ROLE, _stakingPool);
+        emit StakingPoolSet(_stakingPool);
+    }
+
+    event StakingPoolSet(address indexed stakingPool);
 
     /// @dev Staking pool overrides totalAssets - use internal for conversions
     function totalAssets() public view virtual override returns (uint256) {
@@ -66,9 +76,10 @@ interface IXDCVault {
 
 /**
  * @title WithdrawalRequestNFT
- * @dev ERC-1155 NFT representing a withdrawal claim during 30-day unbonding period
+ * @dev ERC-1155 NFT representing a withdrawal claim during unbonding period
  */
-contract WithdrawalRequestNFT is ERC1155Supply, Ownable {
+contract WithdrawalRequestNFT is ERC1155Supply, AccessControl {
+    bytes32 public constant STAKING_POOL_ROLE = keccak256("STAKING_POOL_ROLE");
     address public stakingPool;
 
     modifier onlyStakingPool() {
@@ -76,12 +87,24 @@ contract WithdrawalRequestNFT is ERC1155Supply, Ownable {
         _;
     }
 
-    constructor() ERC1155("") Ownable(msg.sender) {}
-
-    function setStakingPool(address _pool) external onlyOwner {
-        require(_pool != address(0), "Invalid address");
-        stakingPool = _pool;
+    constructor(address admin_) ERC1155("") {
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC1155, AccessControl) returns (bool) {
+        return ERC1155.supportsInterface(interfaceId) || AccessControl.supportsInterface(interfaceId);
+    }
+
+    function setStakingPool(address _pool) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_pool != address(0), "Invalid address");
+        address old = stakingPool;
+        stakingPool = _pool;
+        if (old != address(0)) _revokeRole(STAKING_POOL_ROLE, old);
+        _grantRole(STAKING_POOL_ROLE, _pool);
+        emit StakingPoolSet(_pool);
+    }
+
+    event StakingPoolSet(address indexed stakingPool);
 
     function mint(address to, uint256 id, uint256 amount) external onlyStakingPool {
         _mint(to, id, amount, "");
@@ -98,20 +121,25 @@ contract WithdrawalRequestNFT is ERC1155Supply, Ownable {
 
 /**
  * @title XDCLiquidityStaking
- * @dev XDC Liquid Staking Protocol - bXDC is ERC4626 vault with WXDC as asset
- * User stakes XDC (native or WXDC) -> receive bXDC shares
+ * @dev XDC Liquid Staking Protocol - role-based, auto-deploy masternodes, RewardsVault
+ * LSP = admin (params, pause). Operators = KYC-verified addresses (coinbase). Rewards only from 0x88.
  */
-contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
+contract XDCLiquidityStaking is AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
+
+    bytes32 public constant LSP_ADMIN_ROLE = keccak256("LSP_ADMIN_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     bXDC public bxdcToken;
     WXDC public wxdc;
     WithdrawalRequestNFT public withdrawalNFT;
+    RewardsVault public rewardsVault;
 
     IXDCValidator public validator;
     IKYCVerifier public kycVerifier;
 
-    uint256 public constant MASTERNODE_CAP = 10_000_000 ether;
+    uint256 public constant DEFAULT_MASTERNODE_CAP = 10_000_000 ether;
+    uint256 public masternodeStakeAmount = 10_000_000 ether;
     uint256 public withdrawDelayBlocks = 1_296_000;
 
     uint256 public totalPooledXDC;
@@ -143,6 +171,22 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
     address public lendingProtocol;
     uint256 public bufferLendingLimit = 0;
 
+    uint256 public timelockDelay = 1 days;
+    uint256 public emergencyTimelockDelay = 1 hours;
+
+    mapping(bytes32 => PendingChange) public pendingChanges;
+    uint256 public pendingPauseAt;
+    uint256 public pendingUnpauseAt;
+
+    struct PendingChange {
+        uint256 value;
+        uint256 executableAt;
+        bool isAddress;
+        address addressValue;
+    }
+
+    uint256 public pendingResignAmount;
+
     event Staked(address indexed user, uint256 xdcAmount, uint256 bxdcAmount, uint256 exchangeRate);
     event WithdrawalRequested(uint256 indexed batchId, address indexed user, uint256 bxdcAmount, uint256 xdcAmount);
     event WithdrawalRedeemed(uint256 indexed batchId, address indexed user, uint256 xdcAmount);
@@ -150,28 +194,47 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
     event MasternodeProposed(address indexed operator, uint256 amount);
     event OperatorAdded(address indexed operator);
     event OperatorRemoved(address indexed operator);
-    event RewardsDeposited(address indexed from, uint256 amount, uint256 newExchangeRate);
+    event RewardsHarvested(uint256 amount, uint256 newExchangeRate);
     event LSPKYCSubmitted(string kycHash);
     event InstantExit(address indexed user, uint256 xdcAmount);
+    event ParameterProposed(bytes32 indexed param, uint256 value, uint256 executableAt);
+    event ParameterChanged(bytes32 indexed param, uint256 value);
+    event AddressParameterProposed(bytes32 indexed param, address value, uint256 executableAt);
+    event AddressParameterChanged(bytes32 indexed param, address value);
+    event MasternodeResigned(address indexed operator, uint256 amount);
+    event InstantExitBufferToppedUp(uint256 amount);
 
-    constructor(address _validator, address _wxdc) Ownable(msg.sender) {
+    constructor(address _validator, address _wxdc, address _lspAdmin) {
         require(_validator != address(0), "Invalid validator");
         require(_wxdc != address(0), "Invalid WXDC");
+        require(_lspAdmin != address(0), "Invalid LSP admin");
         validator = IXDCValidator(_validator);
         wxdc = WXDC(payable(_wxdc));
-        bxdcToken = new bXDC(IERC20(_wxdc));
+        _grantRole(DEFAULT_ADMIN_ROLE, _lspAdmin);
+        _grantRole(LSP_ADMIN_ROLE, _lspAdmin);
+        _setRoleAdmin(OPERATOR_ROLE, LSP_ADMIN_ROLE);
+
+        bxdcToken = new bXDC(IERC20(_wxdc), address(this));
         bxdcToken.setStakingPool(address(this));
-        withdrawalNFT = new WithdrawalRequestNFT();
+        withdrawalNFT = new WithdrawalRequestNFT(address(this));
         withdrawalNFT.setStakingPool(address(this));
+        rewardsVault = new RewardsVault(address(this));
     }
 
-    function setKYCVerifier(address _verifier) external onlyOwner {
+    function getRewardsVaultAddress() external view returns (address) {
+        return address(rewardsVault);
+    }
+
+    function setKYCVerifier(address _verifier) external onlyRole(LSP_ADMIN_ROLE) {
         kycVerifier = IKYCVerifier(_verifier);
+        emit AddressParameterChanged(keccak256("KYC_VERIFIER"), _verifier);
     }
 
-    function setLendingProtocol(address _lending, uint256 _limit) external onlyOwner {
+    function setLendingProtocol(address _lending, uint256 _limit) external onlyRole(LSP_ADMIN_ROLE) {
         lendingProtocol = _lending;
         bufferLendingLimit = _limit;
+        emit AddressParameterChanged(keccak256("LENDING_PROTOCOL"), _lending);
+        emit ParameterChanged(keccak256("BUFFER_LENDING_LIMIT"), _limit);
     }
 
     function getExchangeRate() public view returns (uint256) {
@@ -198,43 +261,224 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    function addOperator(address operator) external onlyOwner {
+    /// @dev Add operator - must have KYC verified first (operator submits KYC doc before eligibility)
+    function addOperator(address operator) external onlyRole(LSP_ADMIN_ROLE) {
         _verifyOperatorKYC(operator);
         require(!operators[operator], "Already operator");
         operators[operator] = true;
         operatorList.push(operator);
+        grantRole(OPERATOR_ROLE, operator);
         emit OperatorAdded(operator);
     }
 
-    function removeOperator(address operator) external onlyOwner {
+    function removeOperator(address operator) external onlyRole(LSP_ADMIN_ROLE) {
         require(operators[operator], "Not operator");
         operators[operator] = false;
+        revokeRole(OPERATOR_ROLE, operator);
         emit OperatorRemoved(operator);
     }
 
-    function submitKYC(string calldata kycHash) external onlyOwner {
+    function submitKYC(string calldata kycHash) external onlyRole(LSP_ADMIN_ROLE) {
         validator.uploadKYC(kycHash);
         lspKYCSubmitted = true;
         emit LSPKYCSubmitted(kycHash);
     }
 
-    function proposeMasternode(address operator) external onlyOwner nonReentrant whenNotPaused {
+    /// @dev Harvest rewards from RewardsVault - only XDC from 0x88 can inflate (validator rewards)
+    function harvestRewards() external nonReentrant {
+        uint256 amount = rewardsVault.collectRewards();
+        if (amount > 0) {
+            totalPooledXDC += amount;
+            emit RewardsHarvested(amount, getExchangeRate());
+        }
+    }
+
+    /// @dev Permissionless - anyone can call, but only validator sends to RewardsVault in practice.
+    /// Kept for backward compat if rewards sent to staking contract directly; use harvestRewards for RewardsVault.
+    function depositRewards() external payable {
+        require(msg.value > 0, "Reward amount must be > 0");
+        totalPooledXDC += msg.value;
+        emit RewardsHarvested(msg.value, getExchangeRate());
+    }
+
+    function addToInstantExitBuffer() external payable onlyRole(LSP_ADMIN_ROLE) {
+        require(msg.value > 0, "Amount must be > 0");
+        instantExitBuffer += msg.value;
+        emit InstantExitBufferToppedUp(msg.value);
+    }
+
+    function proposeMinStakeAmount(uint256 amount) external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MIN_STAKE_AMOUNT");
+        pendingChanges[key] = PendingChange({
+            value: amount,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, amount, block.timestamp + timelockDelay);
+    }
+
+    function executeMinStakeAmount() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MIN_STAKE_AMOUNT");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        minStakeAmount = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposeMinWithdrawAmount(uint256 amount) external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MIN_WITHDRAW_AMOUNT");
+        pendingChanges[key] = PendingChange({
+            value: amount,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, amount, block.timestamp + timelockDelay);
+    }
+
+    function executeMinWithdrawAmount() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MIN_WITHDRAW_AMOUNT");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        minWithdrawAmount = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposeWithdrawDelayBlocks(uint256 blocks) external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("WITHDRAW_DELAY_BLOCKS");
+        pendingChanges[key] = PendingChange({
+            value: blocks,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, blocks, block.timestamp + timelockDelay);
+    }
+
+    function executeWithdrawDelayBlocks() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("WITHDRAW_DELAY_BLOCKS");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        withdrawDelayBlocks = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposeMaxWithdrawablePercentage(uint256 pct) external onlyRole(LSP_ADMIN_ROLE) {
+        require(pct <= 100, "Invalid percentage");
+        bytes32 key = keccak256("MAX_WITHDRAWABLE_PERCENTAGE");
+        pendingChanges[key] = PendingChange({
+            value: pct,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, pct, block.timestamp + timelockDelay);
+    }
+
+    function executeMaxWithdrawablePercentage() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MAX_WITHDRAWABLE_PERCENTAGE");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        maxWithdrawablePercentage = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposeMasternodeStakeAmount(uint256 amount) external onlyRole(LSP_ADMIN_ROLE) {
+        require(amount >= DEFAULT_MASTERNODE_CAP, "Below min masternode cap");
+        bytes32 key = keccak256("MASTERNODE_STAKE_AMOUNT");
+        pendingChanges[key] = PendingChange({
+            value: amount,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, amount, block.timestamp + timelockDelay);
+    }
+
+    function executeMasternodeStakeAmount() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("MASTERNODE_STAKE_AMOUNT");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        masternodeStakeAmount = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposeTimelockDelay(uint256 delay) external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("TIMELOCK_DELAY");
+        pendingChanges[key] = PendingChange({
+            value: delay,
+            executableAt: block.timestamp + timelockDelay,
+            isAddress: false,
+            addressValue: address(0)
+        });
+        emit ParameterProposed(key, delay, block.timestamp + timelockDelay);
+    }
+
+    function executeTimelockDelay() external onlyRole(LSP_ADMIN_ROLE) {
+        bytes32 key = keccak256("TIMELOCK_DELAY");
+        PendingChange storage pc = pendingChanges[key];
+        require(pc.executableAt > 0 && block.timestamp >= pc.executableAt, "Timelock not passed");
+        timelockDelay = pc.value;
+        delete pendingChanges[key];
+        emit ParameterChanged(key, pc.value);
+    }
+
+    function proposePause() external onlyRole(LSP_ADMIN_ROLE) {
+        pendingPauseAt = block.timestamp + emergencyTimelockDelay;
+        emit ParameterProposed(keccak256("PAUSE"), 1, pendingPauseAt);
+    }
+
+    function executePause() external onlyRole(LSP_ADMIN_ROLE) {
+        require(pendingPauseAt > 0 && block.timestamp >= pendingPauseAt, "Timelock not passed");
+        pendingPauseAt = 0;
+        _pause();
+    }
+
+    function proposeUnpause() external onlyRole(LSP_ADMIN_ROLE) {
+        pendingUnpauseAt = block.timestamp + emergencyTimelockDelay;
+        emit ParameterProposed(keccak256("UNPAUSE"), 1, pendingUnpauseAt);
+    }
+
+    function executeUnpause() external onlyRole(LSP_ADMIN_ROLE) {
+        require(pendingUnpauseAt > 0 && block.timestamp >= pendingUnpauseAt, "Timelock not passed");
+        pendingUnpauseAt = 0;
+        _unpause();
+    }
+
+    function withdrawForValidator(uint256 amount) external onlyRole(LSP_ADMIN_ROLE) nonReentrant {
+        require(amount > 0, "Amount must be > 0");
+        uint256 balance = address(this).balance;
+        require(amount <= balance, "Insufficient balance");
+        uint256 minRequired = (totalPooledXDC * (100 - maxWithdrawablePercentage)) / 100;
+        require(balance - amount >= minRequired, "Exceeds max withdrawable");
+        totalPooledXDC -= amount;
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Transfer failed");
+    }
+
+    function proposeMasternode(address operator) external onlyRole(LSP_ADMIN_ROLE) nonReentrant whenNotPaused {
         require(lspKYCSubmitted, "LSP must submit KYC first");
         require(operators[operator], "Operator not approved");
         _verifyOperatorKYC(operator);
         require(!validator.isCandidate(operator), "Already candidate");
 
         uint256 balance = address(this).balance;
-        require(balance >= MASTERNODE_CAP, "Insufficient balance for masternode");
+        require(balance >= masternodeStakeAmount, "Insufficient balance for masternode");
 
-        validator.propose{value: MASTERNODE_CAP}(operator);
-        totalStakedInMasternodes += MASTERNODE_CAP;
+        validator.propose{value: masternodeStakeAmount}(operator);
+        totalStakedInMasternodes += masternodeStakeAmount;
         masternodeOperators[operator].push(operator);
 
-        emit MasternodeProposed(operator, MASTERNODE_CAP);
+        emit MasternodeProposed(operator, masternodeStakeAmount);
     }
 
-    /// @dev Stake native XDC - receives XDC and mints bXDC (ERC4626 shares)
+    /// @dev Stake native XDC - auto-deploys masternode when 10mil+ and KYC operator ready
     function stake() external payable nonReentrant whenNotPaused {
         require(msg.value >= minStakeAmount, "Amount below minimum");
         uint256 shares = bxdcToken.previewDeposit(msg.value);
@@ -245,18 +489,9 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
 
         emit Staked(msg.sender, msg.value, shares, getExchangeRate());
 
-        if (address(this).balance >= MASTERNODE_CAP && operatorList.length > 0) {
-            for (uint256 i = 0; i < operatorList.length; i++) {
-                address op = operatorList[i];
-                if (operators[op] && !validator.isCandidate(op) && address(this).balance >= MASTERNODE_CAP) {
-                    _proposeMasternodeInternal(op);
-                    break;
-                }
-            }
-        }
+        _tryAutoDeployMasternode();
     }
 
-    /// @dev ERC4626 deposit - deposit WXDC for bXDC shares
     function deposit(uint256 assets, address receiver) public nonReentrant whenNotPaused returns (uint256) {
         require(assets >= minStakeAmount, "Amount below minimum");
         IERC20(address(wxdc)).safeTransferFrom(msg.sender, address(this), assets);
@@ -266,10 +501,10 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         bxdcToken.mint(receiver, shares);
         emit IERC4626.Deposit(msg.sender, receiver, assets, shares);
         emit Staked(receiver, assets, shares, getExchangeRate());
+        _tryAutoDeployMasternode();
         return shares;
     }
 
-    /// @dev ERC4626 mint - mint exact bXDC shares by depositing WXDC
     function mint(uint256 shares, address receiver) public nonReentrant whenNotPaused returns (uint256) {
         uint256 assets = bxdcToken.previewMint(shares);
         require(assets >= minStakeAmount, "Amount below minimum");
@@ -279,21 +514,44 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         bxdcToken.mint(receiver, shares);
         emit IERC4626.Deposit(msg.sender, receiver, assets, shares);
         emit Staked(receiver, assets, shares, getExchangeRate());
+        _tryAutoDeployMasternode();
         return assets;
+    }
+
+    function _tryAutoDeployMasternode() internal {
+        if (!lspKYCSubmitted || address(this).balance < masternodeStakeAmount) return;
+        for (uint256 i = 0; i < operatorList.length; i++) {
+            address op = operatorList[i];
+            if (operators[op] && !validator.isCandidate(op) && address(this).balance >= masternodeStakeAmount) {
+                if (address(kycVerifier) != address(0) && kycVerifier.getHashCount(op) < 1) continue;
+                _proposeMasternodeInternal(op);
+                break;
+            }
+        }
     }
 
     function _proposeMasternodeInternal(address operator) internal {
         if (!lspKYCSubmitted || !operators[operator] || validator.isCandidate(operator)) return;
-        if (address(this).balance < MASTERNODE_CAP) return;
+        if (address(this).balance < masternodeStakeAmount) return;
         if (address(kycVerifier) != address(0) && kycVerifier.getHashCount(operator) < 1) return;
 
-        validator.propose{value: MASTERNODE_CAP}(operator);
-        totalStakedInMasternodes += MASTERNODE_CAP;
+        validator.propose{value: masternodeStakeAmount}(operator);
+        totalStakedInMasternodes += masternodeStakeAmount;
         masternodeOperators[operator].push(operator);
-        emit MasternodeProposed(operator, MASTERNODE_CAP);
+        emit MasternodeProposed(operator, masternodeStakeAmount);
     }
 
-    /// @dev Withdraw/redeem bXDC - instant if buffer allows, else NFT unbonding
+    /// @dev Resign masternode - receive() updates totalStakedInMasternodes when XDC returns from validator
+    function resignMasternode(address operator) external onlyRole(LSP_ADMIN_ROLE) nonReentrant {
+        require(validator.isCandidate(operator), "Not candidate");
+        uint256 cap = validator.getCandidateCap(operator);
+        require(cap > 0, "No cap");
+        pendingResignAmount = cap;
+        validator.resign(operator);
+        require(pendingResignAmount == 0, "Resign transfer failed");
+        emit MasternodeResigned(operator, cap);
+    }
+
     function withdraw(uint256 bxdcAmount) external nonReentrant whenNotPaused {
         require(bxdcAmount > 0, "Amount must be > 0");
         require(bxdcToken.balanceOf(msg.sender) >= bxdcAmount, "Insufficient bXDC");
@@ -323,7 +581,6 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    /// @dev ERC4626 redeem - instant redeem when buffer allows (returns WXDC)
     function redeem(uint256 shares, address receiver, address owner) public nonReentrant whenNotPaused returns (uint256) {
         uint256 assets = bxdcToken.convertToAssets(shares);
         require(assets <= instantExitBuffer, "Use withdraw for delayed redemption");
@@ -362,56 +619,13 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         emit WithdrawalRedeemed(batchId, msg.sender, batch.xdcAmount);
     }
 
-    function depositRewards() external payable {
-        require(msg.value > 0, "Reward amount must be > 0");
-        totalPooledXDC += msg.value;
-        emit RewardsDeposited(msg.sender, msg.value, getExchangeRate());
+    /// @dev Handle XDC from validator (resign returns) - update totalStakedInMasternodes
+    receive() external payable {
+        if (msg.sender == address(validator) && pendingResignAmount > 0) {
+            uint256 amount = msg.value;
+            uint256 toDeduct = amount > pendingResignAmount ? pendingResignAmount : amount;
+            totalStakedInMasternodes -= toDeduct;
+            pendingResignAmount -= toDeduct;
+        }
     }
-
-    function addToInstantExitBuffer() external payable onlyOwner {
-        instantExitBuffer += msg.value;
-    }
-
-    function setMinStakeAmount(uint256 amount) external onlyOwner {
-        minStakeAmount = amount;
-    }
-
-    function setMinWithdrawAmount(uint256 amount) external onlyOwner {
-        minWithdrawAmount = amount;
-    }
-
-    function setWithdrawDelayBlocks(uint256 blocks) external onlyOwner {
-        withdrawDelayBlocks = blocks;
-    }
-
-    function setMaxWithdrawablePercentage(uint256 pct) external onlyOwner {
-        require(pct <= 100, "Invalid percentage");
-        maxWithdrawablePercentage = pct;
-    }
-
-    function withdrawForValidator(uint256 amount) external onlyOwner nonReentrant {
-        require(amount > 0, "Amount must be > 0");
-        uint256 balance = address(this).balance;
-        require(amount <= balance, "Insufficient balance");
-        uint256 minRequired = (totalPooledXDC * (100 - maxWithdrawablePercentage)) / 100;
-        uint256 withdrawn = totalPooledXDC - balance;
-        require(withdrawn + amount <= totalPooledXDC - minRequired, "Exceeds max");
-        (bool ok, ) = payable(msg.sender).call{value: amount}("");
-        require(ok, "Transfer failed");
-    }
-
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    function emergencyWithdraw() external onlyOwner {
-        (bool ok, ) = payable(msg.sender).call{value: address(this).balance}("");
-        require(ok, "Emergency withdraw failed");
-    }
-
-    receive() external payable {}
 }

@@ -24,7 +24,7 @@ async function main() {
 
     console.log("Deploying XDCLiquidityStaking contract...");
     const XDCLiquidityStaking = await hre.ethers.getContractFactory("XDCLiquidityStaking");
-    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress);
+    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdcAddress, deployer.address);
     await stakingPool.deployed();
     
     const stakingPoolAddress = stakingPool.address;
@@ -52,7 +52,7 @@ async function main() {
     try {
         await hre.run("verify:verify", {
             address: stakingPoolAddress,
-            constructorArguments: [validatorAddress, wxdcAddress],
+            constructorArguments: [validatorAddress, wxdcAddress, deployer.address],
             contract: "contracts/liquditystaking.sol:XDCLiquidityStaking"
         });
         console.log("✅ Contract verified successfully!");
