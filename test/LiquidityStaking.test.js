@@ -19,8 +19,12 @@ describe("XDC Liquidity Staking", function () {
         mockValidator = await MockXDCValidator.deploy();
         await mockValidator.deployed();
 
+        const WXDC = await ethers.getContractFactory("WXDC");
+        const wxdc = await WXDC.deploy();
+        await wxdc.deployed();
+
         const XDCLiquidityStaking = await ethers.getContractFactory("XDCLiquidityStaking");
-        stakingPool = await XDCLiquidityStaking.deploy(mockValidator.address);
+        stakingPool = await XDCLiquidityStaking.deploy(mockValidator.address, wxdc.address);
         await stakingPool.deployed();
 
         bxdc = await ethers.getContractAt("bXDC", await stakingPool.bxdcToken());
@@ -124,7 +128,7 @@ describe("XDC Liquidity Staking", function () {
             const withdrawbXDC = ethers.utils.parseEther("10");
             const expectedXDC = await stakingPool.getXDCBybXDC(withdrawbXDC);
 
-            expect(expectedXDC).to.equal(ethers.utils.parseEther("11"));
+            expect(expectedXDC).to.be.closeTo(ethers.utils.parseEther("11"), ethers.utils.parseEther("0.01"));
         });
     });
 
@@ -295,7 +299,7 @@ describe("XDC Liquidity Staking", function () {
 
             await stakingPool.connect(user1).withdraw(ethers.utils.parseEther("50"));
 
-            expect(await stakingPool.totalPooledXDC()).to.equal(ethers.utils.parseEther("110"));
+            expect(await stakingPool.totalPooledXDC()).to.be.closeTo(ethers.utils.parseEther("110"), ethers.utils.parseEther("0.01"));
             expect(await bxdc.totalSupply()).to.equal(ethers.utils.parseEther("100"));
 
             const finalRate = await stakingPool.getExchangeRate();

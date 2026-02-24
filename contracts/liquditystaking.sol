@@ -2,19 +2,24 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "./interfaces/IXDCValidator.sol";
 import "./interfaces/IKYCVerifier.sol";
+import "./WXDC.sol";
+import "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
  * @title bXDC
- * @dev Liquid staking receipt token for XDC - fully liquid, transferable ERC-20
- * Represents user's share of the staking pool; value grows with staking rewards
+ * @dev ERC4626 tokenized vault - liquid staking receipt token for XDC
+ * Asset: WXDC (wrapped XDC). Shares: bXDC. Value grows with staking rewards.
  */
-contract bXDC is ERC20, Ownable {
+contract bXDC is ERC4626, Ownable {
     address public stakingPool;
 
     modifier onlyStakingPool() {
@@ -22,27 +27,46 @@ contract bXDC is ERC20, Ownable {
         _;
     }
 
-    constructor() ERC20("Staked XDC", "bXDC") Ownable(msg.sender) {}
+    constructor(IERC20 asset_) ERC4626(asset_) ERC20("Staked XDC", "bXDC") Ownable(msg.sender) {}
 
     function setStakingPool(address _stakingPool) external onlyOwner {
         require(_stakingPool != address(0), "Invalid address");
         stakingPool = _stakingPool;
     }
 
+    /// @dev Staking pool overrides totalAssets - use internal for conversions
+    function totalAssets() public view virtual override returns (uint256) {
+        if (stakingPool == address(0)) return IERC20(asset()).balanceOf(address(this));
+        return IXDCVault(stakingPool).totalPooledXDC();
+    }
+
+    /// @dev Allow staking pool to mint (for native XDC stake flow)
     function mint(address to, uint256 amount) external onlyStakingPool {
         _mint(to, amount);
     }
 
+    /// @dev Allow staking pool to burn (for withdrawal flows)
     function burn(address from, uint256 amount) external onlyStakingPool {
         _burn(from, amount);
     }
+
+    /// @dev Use staking pool for deposits
+    function deposit(uint256, address) public pure override returns (uint256) {
+        revert("Use XDCLiquidityStaking.deposit or stake");
+    }
+
+    function mint(uint256, address) public pure override returns (uint256) {
+        revert("Use XDCLiquidityStaking.mint or stake");
+    }
+}
+
+interface IXDCVault {
+    function totalPooledXDC() external view returns (uint256);
 }
 
 /**
  * @title WithdrawalRequestNFT
  * @dev ERC-1155 NFT representing a withdrawal claim during 30-day unbonding period
- * tokenId = unbonding batch id, amount = XDC claim amount
- * Enables: 1) Wait & Redeem 2) Sell on secondary market 3) Instant buyback via new deposits
  */
 contract WithdrawalRequestNFT is ERC1155Supply, Ownable {
     address public stakingPool;
@@ -74,20 +98,21 @@ contract WithdrawalRequestNFT is ERC1155Supply, Ownable {
 
 /**
  * @title XDCLiquidityStaking
- * @dev XDC Liquid Staking Protocol based on XDC 2.0 proposal
- * Layer 1: User stakes XDC -> receive bXDC (instant liquidity)
- * Layer 2: Operator registry, 10M masternode deployment, dual revenue (owner + voter ~90%)
- * Layer 3: Staking buffer yield, ERC-1155 withdrawal NFTs for 30-day unbonding
+ * @dev XDC Liquid Staking Protocol - bXDC is ERC4626 vault with WXDC as asset
+ * User stakes XDC (native or WXDC) -> receive bXDC shares
  */
 contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
+    using SafeERC20 for IERC20;
+
     bXDC public bxdcToken;
+    WXDC public wxdc;
     WithdrawalRequestNFT public withdrawalNFT;
 
     IXDCValidator public validator;
     IKYCVerifier public kycVerifier;
 
     uint256 public constant MASTERNODE_CAP = 10_000_000 ether;
-    uint256 public withdrawDelayBlocks = 1_296_000; // ~30 days at 2s/block, configurable for testnets
+    uint256 public withdrawDelayBlocks = 1_296_000;
 
     uint256 public totalPooledXDC;
     uint256 public totalStakedInMasternodes;
@@ -129,10 +154,12 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
     event LSPKYCSubmitted(string kycHash);
     event InstantExit(address indexed user, uint256 xdcAmount);
 
-    constructor(address _validator) Ownable(msg.sender) {
+    constructor(address _validator, address _wxdc) Ownable(msg.sender) {
         require(_validator != address(0), "Invalid validator");
+        require(_wxdc != address(0), "Invalid WXDC");
         validator = IXDCValidator(_validator);
-        bxdcToken = new bXDC();
+        wxdc = WXDC(payable(_wxdc));
+        bxdcToken = new bXDC(IERC20(_wxdc));
         bxdcToken.setStakingPool(address(this));
         withdrawalNFT = new WithdrawalRequestNFT();
         withdrawalNFT.setStakingPool(address(this));
@@ -154,17 +181,11 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
     }
 
     function getbXDCByXDC(uint256 xdcAmount) public view returns (uint256) {
-        if (xdcAmount == 0) return 0;
-        uint256 supply = bxdcToken.totalSupply();
-        if (supply == 0) return xdcAmount;
-        return (xdcAmount * supply) / totalPooledXDC;
+        return bxdcToken.convertToShares(xdcAmount);
     }
 
     function getXDCBybXDC(uint256 bxdcAmount) public view returns (uint256) {
-        if (bxdcAmount == 0) return 0;
-        uint256 supply = bxdcToken.totalSupply();
-        if (supply == 0) return 0;
-        return (bxdcAmount * totalPooledXDC) / supply;
+        return bxdcToken.convertToAssets(bxdcAmount);
     }
 
     function getAvailableBalance() public view returns (uint256) {
@@ -213,15 +234,16 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         emit MasternodeProposed(operator, MASTERNODE_CAP);
     }
 
+    /// @dev Stake native XDC - receives XDC and mints bXDC (ERC4626 shares)
     function stake() external payable nonReentrant whenNotPaused {
         require(msg.value >= minStakeAmount, "Amount below minimum");
-        uint256 bxdcToMint = getbXDCByXDC(msg.value);
-        require(bxdcToMint > 0, "Invalid bXDC amount");
+        uint256 shares = bxdcToken.previewDeposit(msg.value);
+        require(shares > 0, "Invalid bXDC amount");
 
         totalPooledXDC += msg.value;
-        bxdcToken.mint(msg.sender, bxdcToMint);
+        bxdcToken.mint(msg.sender, shares);
 
-        emit Staked(msg.sender, msg.value, bxdcToMint, getExchangeRate());
+        emit Staked(msg.sender, msg.value, shares, getExchangeRate());
 
         if (address(this).balance >= MASTERNODE_CAP && operatorList.length > 0) {
             for (uint256 i = 0; i < operatorList.length; i++) {
@@ -232,6 +254,32 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
                 }
             }
         }
+    }
+
+    /// @dev ERC4626 deposit - deposit WXDC for bXDC shares
+    function deposit(uint256 assets, address receiver) public nonReentrant whenNotPaused returns (uint256) {
+        require(assets >= minStakeAmount, "Amount below minimum");
+        IERC20(address(wxdc)).safeTransferFrom(msg.sender, address(this), assets);
+        wxdc.withdraw(assets);
+        totalPooledXDC += assets;
+        uint256 shares = bxdcToken.previewDeposit(assets);
+        bxdcToken.mint(receiver, shares);
+        emit IERC4626.Deposit(msg.sender, receiver, assets, shares);
+        emit Staked(receiver, assets, shares, getExchangeRate());
+        return shares;
+    }
+
+    /// @dev ERC4626 mint - mint exact bXDC shares by depositing WXDC
+    function mint(uint256 shares, address receiver) public nonReentrant whenNotPaused returns (uint256) {
+        uint256 assets = bxdcToken.previewMint(shares);
+        require(assets >= minStakeAmount, "Amount below minimum");
+        IERC20(address(wxdc)).safeTransferFrom(msg.sender, address(this), assets);
+        wxdc.withdraw(assets);
+        totalPooledXDC += assets;
+        bxdcToken.mint(receiver, shares);
+        emit IERC4626.Deposit(msg.sender, receiver, assets, shares);
+        emit Staked(receiver, assets, shares, getExchangeRate());
+        return assets;
     }
 
     function _proposeMasternodeInternal(address operator) internal {
@@ -245,10 +293,11 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
         emit MasternodeProposed(operator, MASTERNODE_CAP);
     }
 
+    /// @dev Withdraw/redeem bXDC - instant if buffer allows, else NFT unbonding
     function withdraw(uint256 bxdcAmount) external nonReentrant whenNotPaused {
         require(bxdcAmount > 0, "Amount must be > 0");
         require(bxdcToken.balanceOf(msg.sender) >= bxdcAmount, "Insufficient bXDC");
-        uint256 xdcAmount = getXDCBybXDC(bxdcAmount);
+        uint256 xdcAmount = bxdcToken.convertToAssets(bxdcAmount);
         require(xdcAmount >= minWithdrawAmount, "Below min withdrawal");
 
         bxdcToken.burn(msg.sender, bxdcAmount);
@@ -272,6 +321,29 @@ contract XDCLiquidityStaking is Ownable, ReentrancyGuard, Pausable {
             withdrawalNFT.mint(msg.sender, batchId, xdcAmount);
             emit WithdrawalNFTMinted(batchId, msg.sender, xdcAmount);
         }
+    }
+
+    /// @dev ERC4626 redeem - instant redeem when buffer allows (returns WXDC)
+    function redeem(uint256 shares, address receiver, address owner) public nonReentrant whenNotPaused returns (uint256) {
+        uint256 assets = bxdcToken.convertToAssets(shares);
+        require(assets <= instantExitBuffer, "Use withdraw for delayed redemption");
+        require(assets >= minWithdrawAmount, "Below min withdrawal");
+
+        if (msg.sender != owner) {
+            IERC20(address(bxdcToken)).safeTransferFrom(owner, address(this), shares);
+            bxdcToken.burn(address(this), shares);
+        } else {
+            bxdcToken.burn(owner, shares);
+        }
+        totalPooledXDC -= assets;
+        instantExitBuffer -= assets;
+
+        (bool ok, ) = payable(receiver).call{value: assets}("");
+        require(ok, "Transfer failed");
+
+        emit IERC4626.Withdraw(msg.sender, receiver, owner, assets, shares);
+        emit InstantExit(receiver, assets);
+        return assets;
     }
 
     function redeemWithdrawal(uint256 batchId) external nonReentrant {

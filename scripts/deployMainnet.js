@@ -15,10 +15,17 @@ async function main() {
         console.log("⚠️  WARNING: Low balance! Make sure you have enough XDC for deployment.");
     }
 
+    const validatorAddress = process.env.XDC_VALIDATOR_ADDRESS || "0x0000000000000000000000000000000000000088";
+
+    console.log("Deploying WXDC contract...");
+    const WXDC = await hre.ethers.getContractFactory("WXDC");
+    const wxdc = await WXDC.deploy();
+    await wxdc.deployed();
+    console.log("✅ WXDC deployed to:", wxdc.address);
+
     console.log("Deploying XDCLiquidityStaking contract...");
-    
     const XDCLiquidityStaking = await hre.ethers.getContractFactory("XDCLiquidityStaking");
-    const stakingPool = await XDCLiquidityStaking.deploy();
+    const stakingPool = await XDCLiquidityStaking.deploy(validatorAddress, wxdc.address);
     await stakingPool.deployed();
     
     const stakingPoolAddress = stakingPool.address;
@@ -46,7 +53,7 @@ async function main() {
     try {
         await hre.run("verify:verify", {
             address: stakingPoolAddress,
-            constructorArguments: [],
+            constructorArguments: [validatorAddress, wxdc.address],
             contract: "contracts/liquditystaking.sol:XDCLiquidityStaking"
         });
         console.log("✅ Contract verified successfully!");
@@ -64,7 +71,8 @@ async function main() {
     console.log("\n📝 Contract Addresses:");
     console.log("===================================");
     console.log("XDCLiquidityStaking:", stakingPoolAddress);
-    console.log("bXDC Token:", bxdcAddress);
+    console.log("WXDC:", wxdc.address);
+    console.log("bXDC Token (ERC4626):", bxdcAddress);
     console.log("===================================");
     console.log("\n🔗 View on XDCScan:");
     console.log(`https://xdcscan.com/address/${stakingPoolAddress}`);
@@ -76,6 +84,7 @@ async function main() {
         timestamp: new Date().toISOString(),
         contracts: {
             XDCLiquidityStaking: stakingPoolAddress,
+            WXDC: wxdc.address,
             bXDC: bxdcAddress
         },
         parameters: {
